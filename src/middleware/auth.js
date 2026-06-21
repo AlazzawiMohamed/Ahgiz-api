@@ -12,7 +12,11 @@ const authenticate = async (req, res, next) => {
 
   let decoded;
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET);
+    decoded = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+      issuer:     process.env.JWT_ISSUER    || 'ahgiz.app',
+      audience:   process.env.JWT_AUDIENCE  || 'ahgiz-api',
+    });
   } catch (err) {
     const msg = err.name === 'TokenExpiredError'
       ? 'انتهت صلاحية الجلسة — استخدم refreshToken'
@@ -56,7 +60,11 @@ const optionalAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) return next();
   try {
-    const decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+    const decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+      issuer:   process.env.JWT_ISSUER   || 'ahgiz.app',
+      audience: process.env.JWT_AUDIENCE || 'ahgiz-api',
+    });
     if (decoded.type === 'access') {
       req.user = { id: decoded.id, phone: decoded.phone, role: decoded.role };
     }

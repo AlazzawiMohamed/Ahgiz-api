@@ -9,7 +9,12 @@ const logger = require('../utils/logger');
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const signAccess = (payload) =>
-  jwt.sign({ ...payload, type: 'access' }, process.env.JWT_SECRET, { expiresIn: '15m' });
+  jwt.sign({ ...payload, type: 'access' }, process.env.JWT_SECRET, {
+    expiresIn:  process.env.JWT_ACCESS_EXPIRY || '15m',
+    algorithm:  'HS256',
+    issuer:     process.env.JWT_ISSUER    || 'ahgiz.app',
+    audience:   process.env.JWT_AUDIENCE  || 'ahgiz-api',
+  });
 
 // Opaque refresh token — stored hashed in refresh_tokens table (not JWT)
 const generateRefreshToken = () => crypto.randomBytes(64).toString('hex');
