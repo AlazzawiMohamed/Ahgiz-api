@@ -28,14 +28,10 @@ const sendWhatsAppOTP = async (phone, otp) => {
     `⏱️ صالح لمدة ${process.env.OTP_EXPIRY_MINUTES || 5} دقائق\n` +
     `لا تشارك هذا الكود مع أحد.`;
 
-  if (process.env.NODE_ENV !== 'production') {
-    logger.info(`[DEV] WhatsApp OTP → ${normalized}: ${otp}`);
-    return { success: true, dev: true };
-  }
-
   const { ULTRAMSG_INSTANCE_ID, ULTRAMSG_TOKEN } = process.env;
   if (!ULTRAMSG_INSTANCE_ID || !ULTRAMSG_TOKEN) {
-    throw new Error('إعدادات WhatsApp غير مكتملة');
+    logger.info(`[DEV] WhatsApp OTP → ${normalized}: ${otp}`);
+    return { success: true, dev: true };
   }
 
   const { data } = await axios.post(
