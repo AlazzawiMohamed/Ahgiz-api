@@ -31,7 +31,7 @@ const sendWhatsAppOTP = async (phone, otp) => {
   const { ULTRAMSG_INSTANCE_ID, ULTRAMSG_TOKEN } = process.env;
   if (!ULTRAMSG_INSTANCE_ID || !ULTRAMSG_TOKEN) {
     logger.info(`[DEV] WhatsApp OTP → ${normalized}: ${otp}`);
-    return { success: true, dev: true };
+    return { success: true, dev: true, otp };
   }
 
   const { data } = await axios.post(

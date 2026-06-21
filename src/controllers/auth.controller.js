@@ -109,7 +109,7 @@ exports.sendOtp = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
-    await sendWhatsAppOTP(normalized, otp);
+    const waResult = await sendWhatsAppOTP(normalized, otp);
 
     logger.info(`OTP sent → ${normalized.slice(0, 7)}**** (${existingUser ? 'login' : 'register'})`);
 
@@ -117,6 +117,7 @@ exports.sendOtp = async (req, res, next) => {
       phone: normalized,
       expiresIn: parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60,
       isNewUser: !existingUser,
+      ...(waResult?.dev ? { devOtp: waResult.otp } : {}),
     }, 'تم إرسال كود التحقق عبر واتساب');
   } catch (err) {
     next(err);
