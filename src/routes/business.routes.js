@@ -6,6 +6,8 @@ const upload = require('../middleware/upload');
 
 // ── Public ────────────────────────────────────────────────────────────────────
 router.get('/',                   businessController.getAll);
+router.get('/popular',            businessController.getPopular); // before /:id
+router.get('/feed', authenticate, businessController.getFeed);    // personalized, before /:id
 router.get('/:id',                businessController.getById);
 router.get('/:id/services',       businessController.getServices);
 router.get('/:id/staff',          businessController.getStaff);

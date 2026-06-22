@@ -31,6 +31,34 @@ exports.getById = async (req, res, next) => {
   }
 };
 
+// ─── GET /services/:id/addons ─────────────────────────────────────────────────
+// Optional add-ons offered by the same business (services flagged is_addon).
+exports.getAddons = async (req, res, next) => {
+  try {
+    const { data: svc } = await supabaseAdmin
+      .from('services')
+      .select('business_id')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!svc) return error(res, 'الخدمة غير موجودة', 404);
+
+    const { data, error: dbErr } = await supabaseAdmin
+      .from('services')
+      .select('id, name, description, price, duration')
+      .eq('business_id', svc.business_id)
+      .eq('is_addon', true)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+
+    if (dbErr) throw dbErr;
+    return success(res, data || []);
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.create = async (req, res, next) => {
   try {
     const { business_id, name, description, price, duration, category } = req.body;

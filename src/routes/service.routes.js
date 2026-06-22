@@ -5,6 +5,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 
 router.get('/', serviceController.getAll);
 router.get('/:id', serviceController.getById);
+router.get('/:id/addons', serviceController.getAddons);
 
 router.use(authenticate);
 

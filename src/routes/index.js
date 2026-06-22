@@ -6,6 +6,8 @@ router.use('/users',       require('./user.routes'));
 router.use('/businesses',  require('./business.routes'));
 router.use('/bookings',    require('./booking.routes'));
 router.use('/services',    require('./service.routes'));
+router.use('/payments',    require('./payment.routes'));
+router.use('/banners',     require('./banner.routes'));
 router.use('/categories',    require('./category.routes'));
 router.use('/governorates',  require('./governorate.routes'));
 router.use('/reviews',       require('./review.routes'));

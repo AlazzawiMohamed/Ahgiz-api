@@ -57,6 +57,121 @@ exports.getAll = async (req, res, next) => {
   }
 };
 
+// ─── GET /businesses/popular?province=&limit= ─────────────────────────────────
+// Ranked by booking count over the last 7 days; falls back to featured/top-rated.
+const POPULAR_SELECT = `
+  id, name, province, address, logo_url, cover_url,
+  rating_avg, rating_count, is_featured, current_plan_code,
+  categories ( id, slug, name_ar, name_en, icon_url )
+`;
+
+exports.getPopular = async (req, res, next) => {
+  try {
+    const { province } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+
+    // Count recent bookings per business
+    const { data: recent, error: bErr } = await supabaseAdmin
+      .from('bookings')
+      .select('business_id')
+      .gte('booking_date', weekAgo);
+    if (bErr) throw bErr;
+
+    const counts = {};
+    for (const r of recent || []) {
+      if (r.business_id) counts[r.business_id] = (counts[r.business_id] || 0) + 1;
+    }
+    const rankedIds = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+
+    const baseFilter = (qb) => qb
+      .eq('is_active', true)
+      .eq('is_frozen', false)
+      .eq('approval_status', 'approved');
+
+    let businesses = [];
+    if (rankedIds.length) {
+      let q = baseFilter(
+        supabaseAdmin.from('businesses').select(POPULAR_SELECT)
+          .in('id', rankedIds.slice(0, limit * 2))
+      );
+      if (province) q = q.eq('province', province);
+      const { data, error: e2 } = await q;
+      if (e2) throw e2;
+      businesses = (data || []).sort((a, b) => counts[b.id] - counts[a.id]).slice(0, limit);
+    }
+
+    // Fallback fill so the section is never empty
+    if (businesses.length < limit) {
+      const exclude = businesses.map((b) => b.id);
+      let q = baseFilter(supabaseAdmin.from('businesses').select(POPULAR_SELECT))
+        .order('is_featured', { ascending: false })
+        .order('rating_avg', { ascending: false })
+        .limit(limit + exclude.length);
+      if (province) q = q.eq('province', province);
+      const { data: fill } = await q;
+      for (const b of fill || []) {
+        if (businesses.length >= limit) break;
+        if (!exclude.includes(b.id)) businesses.push(b);
+      }
+    }
+
+    return success(res, { businesses, total: businesses.length });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── GET /businesses/feed?province=&limit= (auth) ─────────────────────────────
+// Personalized feed from existing data: ranks businesses in the categories the
+// user has booked before first, then featured/top-rated. No preference tables needed.
+exports.getFeed = async (req, res, next) => {
+  try {
+    const province = req.query.province || null;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 30);
+
+    // 1) preferred category ids inferred from the user's booking history
+    const { data: hist } = await supabaseAdmin
+      .from('bookings')
+      .select('businesses ( category_id )')
+      .eq('customer_id', req.user.id)
+      .limit(50);
+    const preferred = new Set((hist || []).map(h => h.businesses?.category_id).filter(Boolean));
+
+    // 2) candidate pool (already ordered by featured + rating)
+    let q = supabaseAdmin
+      .from('businesses')
+      .select(`
+        id, name, province, address, logo_url, cover_url,
+        rating_avg, rating_count, is_featured, current_plan_code, category_id,
+        categories ( id, slug, name_ar, name_en, icon_url )
+      `)
+      .eq('is_active', true)
+      .eq('is_frozen', false)
+      .eq('approval_status', 'approved')
+      .order('is_featured', { ascending: false })
+      .order('rating_avg', { ascending: false })
+      .limit(50);
+    if (province) q = q.eq('province', province);
+
+    const { data: pool, error: dbErr } = await q;
+    if (dbErr) throw dbErr;
+
+    // 3) stable rank: preferred-category businesses first, keep featured/rating order within
+    const ranked = (pool || [])
+      .map((b, i) => ({ b, i, pref: preferred.has(b.category_id) ? 1 : 0 }))
+      .sort((x, y) => (y.pref - x.pref) || (x.i - y.i))
+      .slice(0, limit)
+      .map(({ b }) => { const { category_id, ...rest } = b; return rest; });
+
+    return success(res, { businesses: ranked, personalized: preferred.size > 0 });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─── GET /businesses/:id ──────────────────────────────────────────────────────
 exports.getById = async (req, res, next) => {
   try {
@@ -173,15 +288,17 @@ exports.getAvailability = async (req, res, next) => {
       slotIntervalMins: parseInt(slot_interval),
     });
 
-    const freeSlots = slots.filter(s => s.is_free);
+    // Return ALL slots (free + booked) — C08 shows booked ones struck-through (approved decision)
+    const allSlots = slots.map(s => ({ ...s, is_booked: !s.is_free }));
 
     return success(res, {
       date,
       service_id,
       staff_id:   resolvedStaffId,
       duration:   service.duration,
-      slots:      freeSlots,
-      total:      freeSlots.length,
+      slots:      allSlots,
+      total:      allSlots.length,
+      available:  allSlots.filter(s => !s.is_booked).length,
     });
   } catch (err) {
     next(err);

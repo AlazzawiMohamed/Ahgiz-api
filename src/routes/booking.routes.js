@@ -7,6 +7,7 @@ router.use(authenticate);
 
 router.post('/',              bookingController.create);
 router.get('/:id',            bookingController.getById);
+router.post('/:id/confirm',   bookingController.confirm);
 router.put('/:id/cancel',     bookingController.cancel);
 
 module.exports = router;

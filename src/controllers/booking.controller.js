@@ -13,7 +13,7 @@ const addMinutes = (timeStr, mins) => {
 const BOOKING_SELECT = `
   id, booking_date, start_time, end_time, duration, price,
   status, payment_method, payment_status, booking_type,
-  customer_note, created_at,
+  customer_note, selected_addons, created_at,
   services ( id, name, duration, price ),
   businesses ( id, name, address, phone, logo_url ),
   staff ( id, name, photo_url )
@@ -28,6 +28,7 @@ exports.create = async (req, res, next) => {
       payment_method = 'cash',
       booking_type   = 'in_person',
       customer_note,
+      selected_addons,
     } = req.body;
 
     if (!business_id || !service_id || !booking_date || !start_time) {
@@ -78,11 +79,43 @@ exports.create = async (req, res, next) => {
     const totalDuration = service.duration + (service.buffer_minutes || 0);
     const end_time = addMinutes(start_time, totalDuration);
 
-    // Get real price (handles urgent surcharge if applicable)
+    // Validate optional add-ons (must be is_addon services of the same business)
+    let addonIds = [];
+    let addonSnapshot = [];
+    if (selected_addons !== undefined) {
+      if (!Array.isArray(selected_addons)) {
+        return error(res, 'selected_addons يجب أن تكون مصفوفة', 400);
+      }
+      addonIds = [...new Set(selected_addons)];
+      if (addonIds.length) {
+        const { data: addonRows, error: addonErr } = await supabaseAdmin
+          .from('services')
+          .select('id, name, price, duration')
+          .in('id', addonIds)
+          .eq('business_id', business_id)
+          .eq('is_addon', true)
+          .eq('is_active', true);
+
+        if (addonErr) throw addonErr;
+        if ((addonRows?.length || 0) !== addonIds.length) {
+          return error(res, 'إحدى الإضافات المختارة غير صالحة', 400);
+        }
+        // Snapshot stored on the booking (price frozen at booking time)
+        addonSnapshot = addonRows.map(a => ({
+          addon_id:      a.id,
+          name:          a.name,
+          price:         Number(a.price),
+          duration_mins: a.duration || 0,
+        }));
+      }
+    }
+
+    // Final price computed server-side in the RPC (urgent surcharge + add-ons)
     const { data: priceData, error: priceErr } = await supabaseAdmin
       .rpc('calculate_booking_price', {
-        p_service_id:   service_id,
-        p_booking_date: booking_date,
+        p_service_id:      service_id,
+        p_booking_date:    booking_date,
+        p_selected_addons: addonIds,
       });
 
     if (priceErr) throw priceErr;
@@ -104,6 +137,7 @@ exports.create = async (req, res, next) => {
         payment_method,
         booking_type,
         customer_note:  customer_note || null,
+        selected_addons: addonSnapshot,
         status:         'pending',
         payment_status: 'unpaid',
       })
@@ -141,6 +175,56 @@ exports.getById = async (req, res, next) => {
     }
 
     return success(res, booking);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── POST /bookings/:id/confirm ───────────────────────────────────────────────
+// Finalizes a pending booking and schedules all notifications exactly once.
+exports.confirm = async (req, res, next) => {
+  try {
+    const { data: booking } = await supabaseAdmin
+      .from('bookings')
+      .select('id, customer_id, status')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!booking) return error(res, 'الحجز غير موجود', 404);
+
+    if (req.user.role === 'customer' && booking.customer_id !== req.user.id) {
+      return error(res, 'ليس لديك صلاحية لتأكيد هذا الحجز', 403);
+    }
+
+    if (['cancelled', 'completed', 'no_show'].includes(booking.status)) {
+      return error(res, `لا يمكن تأكيد حجز بحالة: ${booking.status}`, 400);
+    }
+
+    // Idempotent: already confirmed → return as-is without re-scheduling notifications
+    if (booking.status === 'confirmed') {
+      const { data: existing } = await supabaseAdmin
+        .from('bookings').select(BOOKING_SELECT).eq('id', booking.id).single();
+      return success(res, existing, 'الحجز مؤكد مسبقاً');
+    }
+
+    const { data: updated, error: dbErr } = await supabaseAdmin
+      .from('bookings')
+      .update({ status: 'confirmed' })
+      .eq('id', booking.id)
+      .select(BOOKING_SELECT)
+      .single();
+
+    if (dbErr) throw dbErr;
+
+    // Schedule all booking notifications once (WhatsApp etc.) — never built manually
+    const { error: rpcErr } = await supabaseAdmin
+      .rpc('schedule_booking_notifications', { p_booking_id: booking.id });
+    if (rpcErr) {
+      // Booking is already confirmed; don't fail the request if scheduling hiccups
+      console.error('schedule_booking_notifications failed:', rpcErr.message);
+    }
+
+    return success(res, updated, 'تم تأكيد الحجز');
   } catch (err) {
     next(err);
   }
