@@ -48,4 +48,56 @@ const sendWhatsAppOTP = async (phone, otp) => {
   return { success: true, messageId: data.id };
 };
 
-module.exports = { sendWhatsAppOTP, normalizeIraqiPhone, validateIraqiPhone };
+// ── Generic message sender (notifications, reminders, campaigns) ──────────────
+const sendWhatsAppMessage = async (phone, message) => {
+  const normalized = validateIraqiPhone(phone);
+  if (!normalized) {
+    throw Object.assign(new Error('رقم الهاتف العراقي غير صحيح'), { statusCode: 400 });
+  }
+
+  const { ULTRAMSG_INSTANCE_ID, ULTRAMSG_TOKEN } = process.env;
+  if (!ULTRAMSG_INSTANCE_ID || !ULTRAMSG_TOKEN) {
+    logger.info(`[DEV] WhatsApp → ${normalized}: ${message.slice(0, 60)}`);
+    return { success: true, dev: true };
+  }
+
+  const { data } = await axios.post(
+    `https://api.ultramsg.com/${ULTRAMSG_INSTANCE_ID}/messages/chat`,
+    new URLSearchParams({ token: ULTRAMSG_TOKEN, to: normalized, body: message }),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10000 }
+  );
+
+  if (!data?.sent) {
+    logger.error('WhatsApp send failed', data);
+    throw new Error('فشل إرسال رسالة واتساب');
+  }
+
+  return { success: true, messageId: data.id };
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const RETRY_ATTEMPTS = parseInt(process.env.WHATSAPP_RETRY_ATTEMPTS || '3', 10);
+
+// إرسال مع إعادة محاولة (يستخدمه Bull queue processor). لا يُعيد المحاولة على رقم خاطئ.
+const sendWhatsAppWithRetry = async (phone, message, userId = null, attempts = RETRY_ATTEMPTS) => {
+  let lastErr;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await sendWhatsAppMessage(phone, message);
+    } catch (err) {
+      lastErr = err;
+      if (err.statusCode === 400) throw err; // رقم غير صالح — لا فائدة من الإعادة
+      logger.warn(`WhatsApp retry ${i}/${attempts} for ${userId || phone}: ${err.message}`);
+      if (i < attempts) await sleep(1000 * i);
+    }
+  }
+  throw lastErr;
+};
+
+module.exports = {
+  sendWhatsAppOTP,
+  sendWhatsAppMessage,
+  sendWhatsAppWithRetry,
+  normalizeIraqiPhone,
+  validateIraqiPhone,
+};
