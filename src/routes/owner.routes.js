@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ownerController  = require('../controllers/owner.controller');
+const medicalController = require('../controllers/medical.controller');
 const { authenticate, authorize } = require('../middleware/auth');
 const requireBusiness  = require('../middleware/requireBusiness');
 
@@ -27,6 +28,10 @@ router.get('/clients/:customerId/notes',            ownerController.listClientNo
 router.post('/clients/:customerId/notes',           ownerController.createClientNote);
 router.put('/clients/:customerId/notes/:noteId',    ownerController.updateClientNote);
 router.delete('/clients/:customerId/notes/:noteId', ownerController.deleteClientNote);
+
+// Medical/legal record (Sprint 4) — صاحب الحجز فقط
+router.get('/bookings/:id/medical-record', medicalController.getRecord);
+router.put('/bookings/:id/medical-record', medicalController.upsertRecord);
 
 // Reviews reply (Sprint 4)
 router.put('/reviews/:id/reply',          ownerController.replyReview);

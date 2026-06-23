@@ -12,6 +12,7 @@ exports.getByBusiness = async (req, res, next) => {
       .select(`
         id, business_rating, business_comment,
         staff_rating, staff_comment, created_at,
+        owner_reply, owner_reply_at,
         users ( id, full_name, avatar_url ),
         staff ( id, name, photo_url )
       `, { count: 'exact' })
