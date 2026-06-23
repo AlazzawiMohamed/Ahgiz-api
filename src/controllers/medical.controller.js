@@ -1,5 +1,10 @@
+const path = require('path');
+const crypto = require('crypto');
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
+const { MEDICAL_EXT, MEDICAL_MIME } = require('../middleware/upload');
+
+const ALLOWED_FILE_TYPES = ['exam', 'prescription', 'lab_result', 'legal_doc', 'contract', 'id_document', 'other'];
 
 // الملف الطبي/القانوني — نقاط نهاية صاحب العمل (الطبيب/المحامي صاحب الحجز).
 // نستخدم service-role (يتجاوز RLS) لذا نفرض التحقق من الملكية والإذن في الكود.
@@ -151,6 +156,68 @@ exports.upsertRecord = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     return success(res, data, 'تم حفظ السجل الطبي');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── POST /owner/bookings/:id/medical-files ──────────────────────────────────
+// رفع ملف للمريض إلى Storage الخاص (medical-files/) + تسجيل المسار في user_files.
+// يُسمح بـ PDF/JPG/PNG/WEBP فقط (SVG محظور)، حد أقصى 10MB (يفرضه middleware uploadMedical).
+exports.uploadFile = async (req, res, next) => {
+  try {
+    const booking = await fetchOwnedBooking(req.params.id, req.business.id);
+    if (!booking) return error(res, 'الحجز غير موجود', 404);
+    if (booking.is_manual || !booking.customer_id) {
+      return error(res, 'لا يمكن رفع ملفات لحجز يدوي', 400);
+    }
+    if (!req.file) return error(res, 'الملف مطلوب', 400);
+
+    // تحقق إضافي من النوع (دفاع متعدد الطبقات — middleware فلتر أصلاً)
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const mime = (req.file.mimetype || '').toLowerCase();
+    if (ext === '.svg' || mime === 'image/svg+xml') {
+      return error(res, 'ملفات SVG غير مسموح بها', 400);
+    }
+    if (!MEDICAL_EXT.includes(ext) || !MEDICAL_MIME.includes(mime)) {
+      return error(res, 'صيغة غير مدعومة. يُسمح فقط بـ PDF, JPG, PNG, WEBP', 400);
+    }
+
+    let fileType = (req.body?.file_type || 'other').toString();
+    if (!ALLOWED_FILE_TYPES.includes(fileType)) fileType = 'other';
+
+    // مسار خاص داخل bucket ahgiz-media — لا وصول عام إطلاقاً، signed URL فقط.
+    const storagePath = `medical-files/${booking.customer_id}/${crypto.randomUUID()}${ext}`;
+    const { error: upErr } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, req.file.buffer, { contentType: mime, upsert: false });
+    if (upErr) throw upErr;
+
+    const { data: row, error: dbErr } = await supabaseAdmin
+      .from('user_files')
+      .insert({
+        owner_id:     booking.customer_id,  // الملف ملك المريض
+        business_id:  req.business.id,
+        booking_id:   booking.id,
+        file_type:    fileType,
+        file_path:    storagePath,
+        file_name:    req.file.originalname,
+        file_size_kb: Math.round(req.file.size / 1024),
+        mime_type:    mime,
+        uploaded_by:  req.user.id,          // الطبيب/المحامي الذي رفعه
+        notes:        req.body?.notes || null,
+      })
+      .select(FILE_SELECT)
+      .single();
+
+    if (dbErr) {
+      // تراجع: احذف الملف المرفوع كي لا يبقى يتيماً في Storage
+      await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([storagePath]).catch(() => {});
+      throw dbErr;
+    }
+
+    const [withUrl] = await withSignedUrls([row]);
+    return success(res, withUrl, 'تم رفع الملف', 201);
   } catch (err) {
     next(err);
   }
