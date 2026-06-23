@@ -15,6 +15,7 @@ router.use('/notifications', require('./notification.routes'));
 router.use('/favorites',     require('./favorite.routes'));
 router.use('/search',        require('./search.routes'));
 router.use('/owner',         require('./owner.routes'));
+router.use('/admin/auth',    require('./adminAuth.routes')); // عام — قبل /admin المحمي
 router.use('/admin',         require('./admin.routes'));
 
 router.get('/health', (req, res) => {

@@ -5,10 +5,14 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const logger = require('./utils/logger');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
+const sentry = require('./utils/sentry');
 const routes = require('./routes/index');
 const fs = require('fs');
 
 if (!fs.existsSync('logs')) fs.mkdirSync('logs');
+
+// تهيئة Sentry مبكراً (no-op بدون SENTRY_DSN أو بدون الحزمة)
+sentry.init();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,6 +45,7 @@ app.use((req, res, next) => {
 app.use('/api/v1', routes);
 
 app.use(notFound);
+app.use(sentry.captureErrors()); // التقاط الأخطاء في Sentry قبل المعالج العام
 app.use(errorHandler);
 
 app.listen(PORT, () => {

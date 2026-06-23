@@ -8,13 +8,19 @@
     "dev": "nodemon index.js",
     "test": "jest"
   },
-  "keywords": ["booking", "appointments", "iraq", "arabic"],
+  "keywords": [
+    "booking",
+    "appointments",
+    "iraq",
+    "arabic"
+  ],
   "author": "Ahgiz Team",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@sentry/node": "^8.55.2",
     "@supabase/supabase-js": "^2.45.0",
     "axios": "^1.7.2",
     "bcrypt": "^5.1.1",
@@ -31,7 +37,7 @@
     "winston": "^3.13.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4",
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.4"
   }
 }
