@@ -269,8 +269,41 @@
 `name, description, bio, specialty, phone, whatsapp, address, province, maps_url,`  
 `instagram_url, tiktok_url, facebook_url, booking_confirmation (auto|manual),`  
 `cancellation_hours, min_booking_gap, prep_time_minutes, no_last_minute,`  
-`last_minute_hours, overtime_allowed, waitlist_enabled`  
-**Errors:** 400 (لا حقول صالحة / booking_confirmation غير صالح)
+`last_minute_hours, overtime_allowed, waitlist_enabled,`  
+`calendar_booking_color, calendar_break_color, rebooking_reminder_days, time_magnet`  
+**Errors:** 400 (لا حقول صالحة / booking_confirmation غير صالح / لون hex غير صالح)  
+> الأعمدة الأربعة الأخيرة تتطلب migration `2026-06-23_owner_gap_endpoints.sql`.
+
+### Sprint 4 — Gap endpoints (owner)
+
+#### `GET /owner/bookings/calendar?date=&staff_id=`
+🔒💼 حجوزات اليوم (عدا الملغاة) للتقويم.  
+**Returns:** `{ date, bookings[], breaks[] }` — 200
+
+#### `GET /owner/bookings/day-indicators?date=&staff_id=`
+🔒💼 مؤشرات بطاقات الحجز.  
+**Returns:** `[{ booking_id, has_note, is_loyal, has_files, has_warning }]` — 200  
+> `has_files` دائماً false (لا يوجد جدول ملفات بعد).
+
+#### `PUT /owner/bookings/:id/cancel`
+🔒💼 إلغاء صاحب العمل بسبب — عبر `cancel_booking_with_fee` (بدون رسوم على المالك).  
+**Body:** `{ reason? }` · **Errors:** 400 (حالة غير قابلة للإلغاء), 404
+
+#### `PUT /owner/bookings/:id/reschedule`
+🔒💼 إعادة جدولة (يُعاد حساب `end_time` من المدة).  
+**Body:** `{ booking_date, start_time }` · **Errors:** 400, 404
+
+#### `GET|POST /owner/clients/:customerId/notes`
+🔒💼 ملاحظات الزبون (جدول `customer_notes`).  
+**POST Body:** `{ note, tag?, is_loyal? }` — `tag ∈ ⏰⚡💰❌👻😊😤⚠️`
+
+#### `PUT|DELETE /owner/clients/:customerId/notes/:noteId`
+🔒💼 تعديل/حذف ملاحظة (مقيّدة بمحل صاحب العمل). · **Errors:** 400, 404
+
+#### `PUT /owner/reviews/:id/reply`
+🔒💼 رد صاحب العمل على تقييم.  
+**Body:** `{ reply }` · **Errors:** 400, 404  
+> يتطلب migration `2026-06-23_owner_gap_endpoints.sql` (عمودا `owner_reply`, `owner_reply_at`).
 
 ---
 

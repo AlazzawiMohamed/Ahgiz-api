@@ -1,6 +1,27 @@
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
 
+// هل يملك المستخدم هذا المحل؟ (الأدمن يتجاوز)
+const ownsBusiness = async (userId, businessId) => {
+  const { data } = await supabaseAdmin
+    .from('businesses')
+    .select('id')
+    .eq('id', businessId)
+    .eq('owner_id', userId)
+    .maybeSingle();
+  return !!data;
+};
+
+// business_id المالك للخدمة (للتحقق قبل التعديل/الحذف)
+const serviceBusinessId = async (serviceId) => {
+  const { data } = await supabaseAdmin
+    .from('services')
+    .select('business_id')
+    .eq('id', serviceId)
+    .maybeSingle();
+  return data?.business_id || null;
+};
+
 exports.getAll = async (req, res, next) => {
   try {
     const { business_id, category } = req.query;
@@ -66,6 +87,11 @@ exports.create = async (req, res, next) => {
       return error(res, 'بيانات الخدمة غير مكتملة', 400);
     }
 
+    // تحقق الملكية — لا يُسمح بإنشاء خدمة لمحل لا تملكه
+    if (req.user.role !== 'admin' && !(await ownsBusiness(req.user.id, business_id))) {
+      return error(res, 'لا تملك هذا المحل', 403);
+    }
+
     const { data, error: dbErr } = await supabaseAdmin
       .from('services')
       .insert({ business_id, name, description, price, duration, category })
@@ -81,6 +107,12 @@ exports.create = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
+    const bizId = await serviceBusinessId(req.params.id);
+    if (!bizId) return error(res, 'الخدمة غير موجودة', 404);
+    if (req.user.role !== 'admin' && !(await ownsBusiness(req.user.id, bizId))) {
+      return error(res, 'لا تملك هذه الخدمة', 403);
+    }
+
     const allowed = ['name', 'description', 'price', 'duration', 'category', 'is_active'];
     const updates = Object.fromEntries(
       Object.entries(req.body).filter(([k]) => allowed.includes(k))
@@ -102,6 +134,12 @@ exports.update = async (req, res, next) => {
 
 exports.remove = async (req, res, next) => {
   try {
+    const bizId = await serviceBusinessId(req.params.id);
+    if (!bizId) return error(res, 'الخدمة غير موجودة', 404);
+    if (req.user.role !== 'admin' && !(await ownsBusiness(req.user.id, bizId))) {
+      return error(res, 'لا تملك هذه الخدمة', 403);
+    }
+
     const { error: dbErr } = await supabaseAdmin
       .from('services')
       .update({ is_active: false })

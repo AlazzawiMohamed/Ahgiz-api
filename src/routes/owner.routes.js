@@ -10,10 +10,27 @@ router.use(authorize('business'));
 router.use(requireBusiness);
 
 router.get('/dashboard',                  ownerController.getDashboard);
+
+// Calendar (Sprint 4) — قبل /bookings العامة
+router.get('/bookings/calendar',          ownerController.getCalendar);
+router.get('/bookings/day-indicators',    ownerController.getDayIndicators);
+
 router.get('/bookings',                   ownerController.getBookings);
 router.put('/bookings/:id/confirm',       ownerController.confirmBooking);
 router.put('/bookings/:id/complete',      ownerController.completeBooking);
 router.put('/bookings/:id/no-show',       ownerController.noShowBooking);
+router.put('/bookings/:id/cancel',        ownerController.cancelBooking);
+router.put('/bookings/:id/reschedule',    ownerController.rescheduleBooking);
+
+// Client notes (Sprint 4)
+router.get('/clients/:customerId/notes',            ownerController.listClientNotes);
+router.post('/clients/:customerId/notes',           ownerController.createClientNote);
+router.put('/clients/:customerId/notes/:noteId',    ownerController.updateClientNote);
+router.delete('/clients/:customerId/notes/:noteId', ownerController.deleteClientNote);
+
+// Reviews reply (Sprint 4)
+router.put('/reviews/:id/reply',          ownerController.replyReview);
+
 router.get('/staff',                      ownerController.getStaff);
 router.put('/business',                   ownerController.updateBusiness);
 

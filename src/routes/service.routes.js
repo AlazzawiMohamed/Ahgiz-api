@@ -9,8 +9,8 @@ router.get('/:id/addons', serviceController.getAddons);
 
 router.use(authenticate);
 
-router.post('/', authorize('owner', 'admin'), serviceController.create);
-router.put('/:id', authorize('owner', 'admin'), serviceController.update);
-router.delete('/:id', authorize('owner', 'admin'), serviceController.remove);
+router.post('/', authorize('business', 'admin'), serviceController.create);
+router.put('/:id', authorize('business', 'admin'), serviceController.update);
+router.delete('/:id', authorize('business', 'admin'), serviceController.remove);
 
 module.exports = router;
