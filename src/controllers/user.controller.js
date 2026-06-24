@@ -5,13 +5,25 @@ exports.getProfile = async (req, res, next) => {
   try {
     const { data: user, error: dbErr } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, phone, email, role, avatar_url, province, profile_completed, created_at')
+      .select('id, full_name, phone, email, role, avatar_url, province, date_of_birth, gender, preferred_payment, profile_completed, created_at')
       .eq('id', req.user.id)
       .is('deleted_at', null)
       .single();
 
     if (dbErr || !user) return error(res, 'المستخدم غير موجود', 404);
-    return success(res, user);
+
+    // province is stored as a governorates.slug — attach the Arabic name for display
+    let province_name = null;
+    if (user.province) {
+      const { data: gov } = await supabaseAdmin
+        .from('governorates')
+        .select('name_ar')
+        .eq('slug', user.province)
+        .maybeSingle();
+      province_name = gov?.name_ar || null;
+    }
+
+    return success(res, { ...user, province_name });
   } catch (err) {
     next(err);
   }
@@ -47,6 +59,14 @@ exports.updateProfile = async (req, res, next) => {
 
     if (req.body.email !== undefined) updates.email = req.body.email;
     if (req.body.preferred_payment !== undefined) updates.preferred_payment = req.body.preferred_payment;
+    if (req.body.date_of_birth !== undefined) updates.date_of_birth = req.body.date_of_birth || null;
+
+    if (req.body.gender !== undefined) {
+      if (req.body.gender !== null && !['male', 'female', 'prefer_not_to_say'].includes(req.body.gender)) {
+        return error(res, 'قيمة الجنس غير صالحة', 400);
+      }
+      updates.gender = req.body.gender || null;
+    }
 
     if (req.body.province !== undefined) {
       const { slug, invalid } = await resolveProvinceSlug(req.body.province);
@@ -62,11 +82,23 @@ exports.updateProfile = async (req, res, next) => {
       .from('users')
       .update(updates)
       .eq('id', req.user.id)
-      .select('id, full_name, phone, email, role, avatar_url, province, preferred_payment, profile_completed')
+      .select('id, full_name, phone, email, role, avatar_url, province, date_of_birth, gender, preferred_payment, profile_completed')
       .single();
 
     if (dbErr) throw dbErr;
-    return success(res, data, 'تم تحديث الملف الشخصي');
+
+    // Mirror getProfile: attach Arabic governorate name for display
+    let province_name = null;
+    if (data.province) {
+      const { data: gov } = await supabaseAdmin
+        .from('governorates')
+        .select('name_ar')
+        .eq('slug', data.province)
+        .maybeSingle();
+      province_name = gov?.name_ar || null;
+    }
+
+    return success(res, { ...data, province_name }, 'تم تحديث الملف الشخصي');
   } catch (err) {
     next(err);
   }
