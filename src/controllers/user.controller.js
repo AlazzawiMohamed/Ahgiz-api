@@ -17,12 +17,42 @@ exports.getProfile = async (req, res, next) => {
   }
 };
 
+// users.province is a FK to governorates(slug). The mobile sends the Arabic name
+// (or sometimes a slug), so resolve whatever arrives to a valid slug.
+const PROVINCE_SYNONYMS = { 'القادسية': 'qadisiyyah', 'الديوانية': 'qadisiyyah' };
+
+async function resolveProvinceSlug(value) {
+  if (value == null) return { slug: null };          // clearing the field is allowed
+  const v = String(value).trim();
+  if (!v) return { slug: null };
+
+  const { data: rows, error: dbErr } = await supabaseAdmin
+    .from('governorates')
+    .select('slug, name_ar');
+  if (dbErr) throw dbErr;
+
+  const hit = (rows || []).find((g) => g.slug === v || g.name_ar === v);
+  if (hit) return { slug: hit.slug };
+  if (PROVINCE_SYNONYMS[v]) return { slug: PROVINCE_SYNONYMS[v] };
+  return { invalid: true };
+}
+
 exports.updateProfile = async (req, res, next) => {
   try {
-    const allowed = ['full_name', 'email', 'province'];
-    const updates = Object.fromEntries(
-      Object.entries(req.body).filter(([k]) => allowed.includes(k) && req.body[k] !== undefined)
-    );
+    const updates = {};
+
+    // Mobile sends `name`; the column is `full_name`.
+    const fullName = req.body.full_name ?? req.body.name;
+    if (fullName !== undefined) updates.full_name = fullName;
+
+    if (req.body.email !== undefined) updates.email = req.body.email;
+    if (req.body.preferred_payment !== undefined) updates.preferred_payment = req.body.preferred_payment;
+
+    if (req.body.province !== undefined) {
+      const { slug, invalid } = await resolveProvinceSlug(req.body.province);
+      if (invalid) return error(res, 'المحافظة غير صالحة', 400);
+      updates.province = slug;
+    }
 
     if (!Object.keys(updates).length) {
       return error(res, 'لا توجد حقول صالحة للتحديث', 400);
@@ -32,7 +62,7 @@ exports.updateProfile = async (req, res, next) => {
       .from('users')
       .update(updates)
       .eq('id', req.user.id)
-      .select('id, full_name, phone, email, role, avatar_url, province, profile_completed')
+      .select('id, full_name, phone, email, role, avatar_url, province, preferred_payment, profile_completed')
       .single();
 
     if (dbErr) throw dbErr;
