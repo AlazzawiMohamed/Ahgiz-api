@@ -122,6 +122,12 @@ exports.create = async (req, res, next) => {
     if (priceErr) throw priceErr;
     const finalPrice = priceData?.[0]?.final_price ?? service.price;
 
+    // Free-cancellation deadline = booking start (Iraq local, UTC+3) minus 24h
+    const startAt = new Date(`${booking_date}T${start_time}+03:00`);
+    const freeCancellationUntil = isNaN(startAt)
+      ? null
+      : new Date(startAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
     // Insert — trigger trg_prevent_booking_conflict handles conflict detection
     const { data: booking, error: dbErr } = await supabaseAdmin
       .from('bookings')
@@ -139,6 +145,7 @@ exports.create = async (req, res, next) => {
         booking_type,
         customer_note:  customer_note || null,
         selected_addons: addonSnapshot,
+        free_cancellation_until: freeCancellationUntil,
         status:         'pending',
         payment_status: 'unpaid',
       })

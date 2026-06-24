@@ -67,6 +67,13 @@ exports.create = async (req, res, next) => {
       return error(res, 'حدث خطأ أثناء إنشاء التقييم', 500);
     }
 
+    // Mark the booking as reviewed (best-effort — review is already persisted)
+    const { error: flagErr } = await supabaseAdmin
+      .from('bookings')
+      .update({ is_reviewed: true })
+      .eq('id', booking_id);
+    if (flagErr) console.error('failed to set bookings.is_reviewed:', flagErr.message);
+
     return success(res, { review_id: result.review_id }, 'تم إضافة التقييم بنجاح', 201);
   } catch (err) {
     next(err);
