@@ -18,10 +18,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(helmet());
+const allowedOrigins = [
+  'https://ahgiz-admin.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:3998',
+  process.env.CORS_ORIGIN,
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? ['https://ahgiz.iq', 'https://app.ahgiz.iq']
-    : '*',
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) cb(null, true);
+    else cb(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
