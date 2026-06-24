@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
+const { sendWhatsAppMessage } = require('../services/whatsapp.service');
 
 // Add minutes to a HH:MM[:SS] time string → HH:MM:SS
 const addMinutes = (timeStr, mins) => {
@@ -158,6 +159,58 @@ exports.create = async (req, res, next) => {
   }
 };
 
+// Same fields as BOOKING_SELECT but with singular aliases the mobile app expects
+// (business/service/staff) instead of the raw foreign-table names.
+const MY_BOOKING_SELECT = `
+  id, business_id, service_id, staff_id,
+  booking_date, start_time, end_time, duration, price,
+  status, payment_method, payment_status, booking_type,
+  customer_note, selected_addons, created_at,
+  free_cancellation_until, cancellation_requested, is_reviewed,
+  service:services ( id, name, duration, price ),
+  business:businesses ( id, name, address, phone, logo_url ),
+  staff:staff ( id, name, photo_url )
+`;
+
+// ─── GET /bookings/my ─────────────────────────────────────────────────────────
+// Customer's own bookings, split into upcoming (today onward) and past tabs.
+exports.getMy = async (req, res, next) => {
+  try {
+    const status = req.query.status === 'past' ? 'past' : 'upcoming';
+    const limit  = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+    // Today's date (YYYY-MM-DD) — boundary between upcoming and past tabs
+    const today = new Date().toISOString().slice(0, 10);
+
+    let query = supabaseAdmin
+      .from('bookings')
+      .select(MY_BOOKING_SELECT)
+      .eq('customer_id', req.user.id);
+
+    if (status === 'past') {
+      query = query
+        .lt('booking_date', today)
+        .order('booking_date', { ascending: false })
+        .order('start_time', { ascending: false });
+    } else {
+      query = query
+        .gte('booking_date', today)
+        .order('booking_date', { ascending: true })
+        .order('start_time', { ascending: true });
+    }
+
+    const { data: bookings, error: dbErr } = await query
+      .range(offset, offset + limit - 1);
+
+    if (dbErr) throw dbErr;
+
+    return success(res, bookings || []);
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─── GET /bookings/:id ────────────────────────────────────────────────────────
 exports.getById = async (req, res, next) => {
   try {
@@ -231,9 +284,15 @@ exports.confirm = async (req, res, next) => {
 };
 
 // ─── PUT /bookings/:id/cancel ─────────────────────────────────────────────────
+const CANCEL_REASON_CODES = ['illness', 'emergency', 'booking_error', 'vacation', 'other'];
+
 exports.cancel = async (req, res, next) => {
   try {
-    const { reason } = req.body;
+    const { cancel_reason_code } = req.body;
+
+    if (cancel_reason_code && !CANCEL_REASON_CODES.includes(cancel_reason_code)) {
+      return error(res, 'سبب الإلغاء غير صالح', 400);
+    }
 
     const { data: booking } = await supabaseAdmin
       .from('bookings')
@@ -254,8 +313,10 @@ exports.cancel = async (req, res, next) => {
     const { data: updated, error: dbErr } = await supabaseAdmin
       .from('bookings')
       .update({
-        status:      'cancelled',
-        cancel_reason: reason || null,
+        status:        'cancelled',
+        cancel_reason: cancel_reason_code || null,
+        cancelled_by:  req.user.role === 'customer' ? 'customer' : req.user.role,
+        cancelled_at:  new Date().toISOString(),
       })
       .eq('id', req.params.id)
       .select(BOOKING_SELECT)
@@ -264,6 +325,63 @@ exports.cancel = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     return success(res, updated, 'تم إلغاء الحجز');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── PUT /bookings/:id/cancel-request ─────────────────────────────────────────
+// After the free window the customer can't cancel directly — they request it and
+// the business owner is notified via WhatsApp to approve manually.
+exports.cancelRequest = async (req, res, next) => {
+  try {
+    const { data: booking } = await supabaseAdmin
+      .from('bookings')
+      .select(`
+        id, customer_id, status, booking_date, start_time, cancellation_requested,
+        business:businesses ( name, owner:users!owner_id ( full_name, phone ) )
+      `)
+      .eq('id', req.params.id)
+      .single();
+
+    if (!booking) return error(res, 'الحجز غير موجود', 404);
+
+    if (req.user.role === 'customer' && booking.customer_id !== req.user.id) {
+      return error(res, 'ليس لديك صلاحية لهذا الحجز', 403);
+    }
+
+    if (['cancelled', 'completed', 'no_show'].includes(booking.status)) {
+      return error(res, `لا يمكن طلب إلغاء حجز بحالة: ${booking.status}`, 400);
+    }
+
+    // Idempotent: already requested → succeed without re-notifying the owner
+    if (booking.cancellation_requested) {
+      return success(res, { id: booking.id }, 'تم إرسال طلب الإلغاء مسبقاً');
+    }
+
+    const { error: dbErr } = await supabaseAdmin
+      .from('bookings')
+      .update({ cancellation_requested: true })
+      .eq('id', booking.id);
+
+    if (dbErr) throw dbErr;
+
+    // Notify the owner (best-effort — never fail the request if WhatsApp hiccups)
+    const ownerPhone = booking.business?.owner?.phone;
+    if (ownerPhone) {
+      const msg =
+        `🔔 طلب إلغاء حجز\n\n` +
+        `العميل يطلب إلغاء حجزه في "${booking.business?.name || ''}"\n` +
+        `📅 ${booking.booking_date} • ${String(booking.start_time).slice(0, 5)}\n\n` +
+        `راجع التطبيق للموافقة أو الرفض.`;
+      try {
+        await sendWhatsAppMessage(ownerPhone, msg);
+      } catch (waErr) {
+        console.error('cancel-request owner notify failed:', waErr.message);
+      }
+    }
+
+    return success(res, { id: booking.id }, 'تم إرسال طلب الإلغاء');
   } catch (err) {
     next(err);
   }
