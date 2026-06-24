@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 
 const signAccess = (payload) =>
   jwt.sign({ ...payload, type: 'access' }, process.env.JWT_SECRET, {
-    expiresIn:  process.env.JWT_ACCESS_EXPIRY || '15m',
+    expiresIn:  process.env.JWT_ACCESS_EXPIRY || '7d',
     algorithm:  'HS256',
     issuer:     process.env.JWT_ISSUER    || 'ahgiz.app',
     audience:   process.env.JWT_AUDIENCE  || 'ahgiz-api',
