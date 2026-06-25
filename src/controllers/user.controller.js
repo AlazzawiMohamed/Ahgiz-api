@@ -133,6 +133,47 @@ exports.updateAvatar = async (req, res, next) => {
   }
 };
 
+// POST /users/delete-account — يسجّل الطلب ويجمّد الحساب فوراً (حذف نهائي بعد 30 يوماً)
+const DELETE_REASON_CODES = ['bad_experience', 'poor_performance', 'technical_issue', 'not_needed', 'other'];
+
+exports.deleteAccount = async (req, res, next) => {
+  try {
+    const { reasons, details } = req.body;
+
+    let reasonStr = null;
+    if (Array.isArray(reasons)) {
+      const valid = reasons.filter((r) => DELETE_REASON_CODES.includes(r));
+      reasonStr = valid.length ? valid.join(',') : null;
+    } else if (typeof reasons === 'string' && reasons.trim()) {
+      reasonStr = reasons.trim();
+    }
+
+    const now = new Date();
+    const scheduledAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { error: insErr } = await supabaseAdmin
+      .from('account_deletions')
+      .insert({
+        user_id:      req.user.id,
+        reason:       reasonStr,
+        details:      details || null,
+        scheduled_at: scheduledAt,
+      });
+    if (insErr) throw insErr;
+
+    // Freeze immediately — auth middleware blocks login once deleted_at/is_active are set
+    const { error: updErr } = await supabaseAdmin
+      .from('users')
+      .update({ deleted_at: now.toISOString(), is_active: false })
+      .eq('id', req.user.id);
+    if (updErr) throw updErr;
+
+    return success(res, { scheduled_at: scheduledAt }, 'تم استلام طلب حذف الحساب');
+  } catch (err) {
+    next(err);
+  }
+};
+
 // GET /users/bookings — حجوزاتي مع pagination وفلتر الحالة
 exports.getMyBookings = async (req, res, next) => {
   try {

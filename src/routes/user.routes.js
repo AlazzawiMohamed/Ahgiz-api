@@ -9,6 +9,7 @@ router.use(authenticate);
 router.get('/profile',         userController.getProfile);
 router.put('/profile',         userController.updateProfile);
 router.put('/profile/avatar',  upload.single('avatar'), userController.updateAvatar);
+router.post('/delete-account', userController.deleteAccount);
 router.get('/bookings',        userController.getMyBookings);
 
 module.exports = router;
