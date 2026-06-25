@@ -37,7 +37,9 @@ exports.getByBusiness = async (req, res, next) => {
 // POST /reviews
 exports.create = async (req, res, next) => {
   try {
-    const { booking_id, business_rating, business_comment, staff_id, staff_rating } = req.body;
+    // Mobile sends `comment`; older clients send `business_comment`.
+    const { booking_id, business_rating, staff_id, staff_rating } = req.body;
+    const business_comment = req.body.business_comment ?? req.body.comment;
 
     if (!booking_id)      return error(res, 'booking_id مطلوب', 400);
     if (!business_rating) return error(res, 'business_rating مطلوب', 400);
