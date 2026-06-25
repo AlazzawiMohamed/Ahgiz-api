@@ -13,6 +13,8 @@ router.use('/governorates',  require('./governorate.routes'));
 router.use('/reviews',       require('./review.routes'));
 router.use('/notifications', require('./notification.routes'));
 router.use('/favorites',     require('./favorite.routes'));
+router.use('/loyalty',       require('./loyalty.routes'));
+router.use('/referral',      require('./referral.routes'));
 router.use('/search',        require('./search.routes'));
 router.use('/owner',         require('./owner.routes'));
 router.use('/admin/auth',    require('./adminAuth.routes')); // عام — قبل /admin المحمي
