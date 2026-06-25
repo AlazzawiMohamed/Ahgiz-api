@@ -145,3 +145,43 @@ exports.readOne = async (req, res, next) => {
     next(err);
   }
 };
+
+// ─── DELETE /notifications/all ────────────────────────────────────────────────
+exports.deleteAll = async (req, res, next) => {
+  try {
+    const { error: dbErr } = await supabaseAdmin
+      .from('notifications')
+      .delete()
+      .eq('user_id', req.user.id)
+      .in('channel', ['in_app', 'both']);
+
+    if (dbErr) throw dbErr;
+    return success(res, null, 'تم حذف جميع الإشعارات');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── DELETE /notifications/:id ────────────────────────────────────────────────
+exports.deleteOne = async (req, res, next) => {
+  try {
+    const { data: notif } = await supabaseAdmin
+      .from('notifications')
+      .select('id, user_id')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!notif) return error(res, 'الإشعار غير موجود', 404);
+    if (notif.user_id !== req.user.id) return error(res, 'ليس لديك صلاحية', 403);
+
+    const { error: dbErr } = await supabaseAdmin
+      .from('notifications')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (dbErr) throw dbErr;
+    return success(res, null, 'تم حذف الإشعار');
+  } catch (err) {
+    next(err);
+  }
+};
