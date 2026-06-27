@@ -80,13 +80,14 @@ exports.sendOtp = async (req, res, next) => {
       .eq('phone_number', normalized)
       .eq('status', 'pending');
 
-    // Find existing user (to set session_type and user_id)
+    // Find existing user (to set session_type and user_id).
+    // Include soft-deleted accounts: one still inside its 30-day grace period is an
+    // existing user being restored on login, not a new registration.
     const { data: existingUser } = await supabaseAdmin
       .from('users')
       .select('id')
       .eq('phone', normalized)
-      .is('deleted_at', null)
-      .single();
+      .maybeSingle();
 
     const otp = String(crypto.randomInt(100000, 999999));
     const otpHash = await bcrypt.hash(otp, 10);
@@ -179,13 +180,49 @@ exports.verifyOtp = async (req, res, next) => {
       .update({ status: 'verified', verified_at: new Date().toISOString() })
       .eq('id', session.id);
 
-    // Find or create user
+    // Find or create user. Include soft-deleted rows so an account still within its
+    // 30-day deletion grace period can be restored instead of mis-treated as new.
     let { data: user } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, ban_reason, profile_completed')
+      .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, ban_reason, profile_completed, deleted_at')
       .eq('phone', normalized)
-      .is('deleted_at', null)
-      .single();
+      .maybeSingle();
+
+    // Soft-deleted account → auto-restore if the deletion is still pending and in grace.
+    if (user && user.deleted_at) {
+      const { data: pendingDeletion } = await supabaseAdmin
+        .from('account_deletions')
+        .select('id, scheduled_at')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)              // not yet hard-deleted
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const inGrace = pendingDeletion && new Date(pendingDeletion.scheduled_at) > new Date();
+      if (!inGrace) {
+        // Grace window passed (account effectively deleted) — don't silently resurrect.
+        return error(res, 'تم حذف هذا الحساب', 403);
+      }
+
+      // Restore: clear the soft-delete, reactivate, and cancel the pending deletion.
+      const { data: restored, error: restoreErr } = await supabaseAdmin
+        .from('users')
+        .update({ deleted_at: null, is_active: true })
+        .eq('id', user.id)
+        .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, ban_reason, profile_completed')
+        .single();
+      if (restoreErr) throw restoreErr;
+      user = restored;
+
+      await supabaseAdmin
+        .from('account_deletions')
+        .delete()
+        .eq('user_id', user.id)
+        .is('deleted_at', null);
+
+      logger.info(`Account restored within grace period: user=${user.id}`);
+    }
 
     const isNew = !user;
 
