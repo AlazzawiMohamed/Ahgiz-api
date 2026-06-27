@@ -68,6 +68,14 @@ cron.schedule('0 10 * * *', () => run('rebooking_reminder', async () => {
   }
 }));
 
-logger.info('Cron: 12 jobs scheduled');
+// Job 13: حذف الحسابات نهائياً بعد انتهاء مهلة الـ30 يوماً (account_deletions.scheduled_at).
+// يومياً 00:00 بتوقيت بغداد (UTC+3).
+cron.schedule(
+  '0 0 * * *',
+  () => run('purge_due_account_deletions', () => supabaseAdmin.rpc('purge_due_account_deletions')),
+  { timezone: 'Asia/Baghdad' }
+);
+
+logger.info('Cron: 13 jobs scheduled');
 
 module.exports = { RPC_JOBS };
