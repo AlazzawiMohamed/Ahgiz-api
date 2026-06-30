@@ -184,7 +184,7 @@ exports.verifyOtp = async (req, res, next) => {
     // 30-day deletion grace period can be restored instead of mis-treated as new.
     let { data: user } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, ban_reason, profile_completed, deleted_at')
+      .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, ban_reason, preferred_language, profile_completed, deleted_at')
       .eq('phone', normalized)
       .maybeSingle();
 
@@ -210,7 +210,7 @@ exports.verifyOtp = async (req, res, next) => {
         .from('users')
         .update({ deleted_at: null, is_active: true })
         .eq('id', user.id)
-        .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, ban_reason, profile_completed')
+        .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, ban_reason, preferred_language, profile_completed')
         .single();
       if (restoreErr) throw restoreErr;
       user = restored;
@@ -240,7 +240,7 @@ exports.verifyOtp = async (req, res, next) => {
           is_active: true,
           is_banned: false,
         })
-        .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, profile_completed')
+        .select('id, full_name, phone, email, role, avatar_url, is_active, is_banned, preferred_language, profile_completed')
         .single();
 
       if (createErr) throw createErr;
@@ -381,7 +381,7 @@ exports.getMe = async (req, res, next) => {
   try {
     const { data: user, error: dbErr } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, phone, email, role, avatar_url, is_active, profile_completed, province, created_at')
+      .select('id, full_name, phone, email, role, avatar_url, is_active, preferred_language, profile_completed, province, created_at')
       .eq('id', req.user.id)
       .is('deleted_at', null)
       .single();

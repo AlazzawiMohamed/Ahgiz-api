@@ -5,7 +5,7 @@ exports.getProfile = async (req, res, next) => {
   try {
     const { data: user, error: dbErr } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, phone, email, role, avatar_url, province, date_of_birth, gender, preferred_payment, profile_completed, created_at')
+      .select('id, full_name, phone, email, role, avatar_url, province, date_of_birth, gender, preferred_payment, preferred_language, profile_completed, created_at')
       .eq('id', req.user.id)
       .is('deleted_at', null)
       .single();
@@ -74,6 +74,13 @@ exports.updateProfile = async (req, res, next) => {
       updates.province = slug;
     }
 
+    if (req.body.preferred_language !== undefined) {
+      if (!['ar', 'en', 'ku'].includes(req.body.preferred_language)) {
+        return error(res, 'لغة غير صالحة', 400);
+      }
+      updates.preferred_language = req.body.preferred_language;
+    }
+
     if (!Object.keys(updates).length) {
       return error(res, 'لا توجد حقول صالحة للتحديث', 400);
     }
@@ -82,7 +89,7 @@ exports.updateProfile = async (req, res, next) => {
       .from('users')
       .update(updates)
       .eq('id', req.user.id)
-      .select('id, full_name, phone, email, role, avatar_url, province, date_of_birth, gender, preferred_payment, profile_completed')
+      .select('id, full_name, phone, email, role, avatar_url, province, date_of_birth, gender, preferred_payment, preferred_language, profile_completed')
       .single();
 
     if (dbErr) throw dbErr;
@@ -99,6 +106,75 @@ exports.updateProfile = async (req, res, next) => {
     }
 
     return success(res, { ...data, province_name }, 'تم تحديث الملف الشخصي');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Consent versions are owned by the server (single source of truth — not the client)
+const CONSENT_PRIVACY_VERSION = '1.0';
+const CONSENT_TERMS_VERSION   = '1.0';
+
+// ─── POST /users/consent ──────────────────────────────────────────────────────
+// Records the authenticated user's acceptance of privacy + terms. The user id
+// comes from the token and the IP is captured server-side; neither is trusted
+// from the request body.
+exports.recordConsent = async (req, res, next) => {
+  try {
+    const ip = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || null;
+
+    const { error: rpcErr } = await supabaseAdmin.rpc('record_user_consent', {
+      p_user_id:        req.user.id,
+      p_privacy_v:      CONSENT_PRIVACY_VERSION,
+      p_terms_v:        CONSENT_TERMS_VERSION,
+      p_consent_method: 'checkbox',
+      p_ip_address:     ip,
+    });
+    if (rpcErr) throw rpcErr;
+
+    return success(res, {
+      recorded: true,
+      privacy_version: CONSENT_PRIVACY_VERSION,
+      terms_version:   CONSENT_TERMS_VERSION,
+    }, 'تم تسجيل الموافقة');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── POST /users/push-token ───────────────────────────────────────────────────
+// Upserts the caller's Expo push token into push_tokens (unique on `token`).
+// user_id comes from the session token, never the client (Rule 1).
+exports.savePushToken = async (req, res, next) => {
+  try {
+    const { token, platform, device_name, app_version, environment } = req.body;
+
+    if (!token || typeof token !== 'string') {
+      return error(res, 'token مطلوب', 400);
+    }
+    if (!['ios', 'android'].includes(platform)) {
+      return error(res, 'platform يجب أن يكون ios أو android', 400);
+    }
+    const env = ['development', 'staging', 'production'].includes(environment)
+      ? environment : 'production';
+
+    const { error: dbErr } = await supabaseAdmin
+      .from('push_tokens')
+      .upsert({
+        user_id:      req.user.id,
+        token,
+        platform,
+        device_name:  device_name || null,
+        app_version:  app_version || null,
+        environment:  env,
+        is_active:    true,
+        last_used_at: new Date().toISOString(),
+        updated_at:   new Date().toISOString(),
+      }, { onConflict: 'token' });
+
+    if (dbErr) throw dbErr;
+
+    return success(res, { saved: true }, 'تم حفظ توكن الإشعارات');
   } catch (err) {
     next(err);
   }
