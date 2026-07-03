@@ -146,7 +146,7 @@ exports.getFeed = async (req, res, next) => {
       .select(`
         id, name, province, address, logo_url, cover_url,
         rating_avg, rating_count, is_featured, current_plan_code, category_id,
-        categories ( id, slug, name_ar, name_en, icon_url )
+        categories ( id, slug, name_ar, name_en, name_ku, icon_url )
       `)
       .eq('is_active', true)
       .eq('is_frozen', false)
