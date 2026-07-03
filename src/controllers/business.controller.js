@@ -19,7 +19,7 @@ exports.getAll = async (req, res, next) => {
       .select(`
         id, name, province, address, logo_url, cover_url,
         rating_avg, rating_count, is_featured, current_plan_code,
-        categories ( id, slug, name_ar, name_en, icon_url )
+        categories ( id, slug, name_ar, name_en, name_ku, icon_url )
       `, { count: 'exact' })
       .eq('is_active', true)
       .eq('is_frozen', false)
@@ -62,7 +62,7 @@ exports.getAll = async (req, res, next) => {
 const POPULAR_SELECT = `
   id, name, province, address, logo_url, cover_url,
   rating_avg, rating_count, is_featured, current_plan_code,
-  categories ( id, slug, name_ar, name_en, icon_url )
+  categories ( id, slug, name_ar, name_en, name_ku, icon_url )
 `;
 
 exports.getPopular = async (req, res, next) => {
