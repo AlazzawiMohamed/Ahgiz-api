@@ -128,10 +128,17 @@ exports.create = async (req, res, next) => {
     if (priceErr) throw priceErr;
     const finalPrice = priceData?.[0]?.final_price ?? service.price;
 
-    // Free-cancellation deadline = booking start (Iraq local, UTC+3) minus 24h
+    // Free-cancellation deadline = booking start (Iraq local, UTC+3) minus
+    // the business's configurable window (cancellation_hours, default 24)
+    const { data: bizSettings } = await supabaseAdmin
+      .from('businesses')
+      .select('cancellation_hours')
+      .eq('id', business_id)
+      .single();
+    const freeHours = bizSettings?.cancellation_hours ?? 24;
     const freeCancellationUntil = isNaN(startAt)
       ? null
-      : new Date(startAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      : new Date(startAt.getTime() - freeHours * 60 * 60 * 1000).toISOString();
 
     // Insert — trigger trg_prevent_booking_conflict handles conflict detection
     const { data: booking, error: dbErr } = await supabaseAdmin
@@ -180,7 +187,7 @@ const MY_BOOKING_SELECT = `
   customer_note, selected_addons, created_at,
   free_cancellation_until, cancellation_requested, is_reviewed,
   service:services ( id, name, duration, price ),
-  business:businesses ( id, name, address, phone, logo_url ),
+  business:businesses ( id, name, address, phone, logo_url, cancellation_hours ),
   staff:staff ( id, name, photo_url )
 `;
 
