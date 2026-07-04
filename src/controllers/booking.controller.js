@@ -298,15 +298,15 @@ exports.confirm = async (req, res, next) => {
 };
 
 // ─── PUT /bookings/:id/cancel ─────────────────────────────────────────────────
-const CANCEL_REASON_CODES = ['illness', 'emergency', 'booking_error', 'vacation', 'other'];
-
 exports.cancel = async (req, res, next) => {
   try {
+    // سبب الإلغاء نص حر اختياري (كان قائمة رموز ثابتة)
     const { cancel_reason_code } = req.body;
 
-    if (cancel_reason_code && !CANCEL_REASON_CODES.includes(cancel_reason_code)) {
+    if (cancel_reason_code != null && typeof cancel_reason_code !== 'string') {
       return error(res, 'سبب الإلغاء غير صالح', 400);
     }
+    const cancelReason = (cancel_reason_code || '').trim().slice(0, 200) || null;
 
     const { data: booking } = await supabaseAdmin
       .from('bookings')
@@ -328,7 +328,7 @@ exports.cancel = async (req, res, next) => {
       .from('bookings')
       .update({
         status:        'cancelled',
-        cancel_reason: cancel_reason_code || null,
+        cancel_reason: cancelReason,
         cancelled_by:  req.user.role === 'customer' ? 'customer' : req.user.role,
         cancelled_at:  new Date().toISOString(),
       })
