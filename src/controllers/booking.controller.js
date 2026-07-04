@@ -185,15 +185,17 @@ const MY_BOOKING_SELECT = `
 `;
 
 // ─── GET /bookings/my ─────────────────────────────────────────────────────────
-// Customer's own bookings, split into upcoming (today onward) and past tabs.
+// Customer's own bookings, split into upcoming and past by the booking's actual start moment.
 exports.getMy = async (req, res, next) => {
   try {
     const status = req.query.status === 'past' ? 'past' : 'upcoming';
     const limit  = Math.min(parseInt(req.query.limit, 10) || 20, 50);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-    // Today's date (YYYY-MM-DD) — boundary between upcoming and past tabs
-    const today = new Date().toISOString().slice(0, 10);
+    // الحد الفاصل بين "قادمة" و"سابقة" = لحظة الموعد الفعلية (تاريخ + وقت) بتوقيت العراق
+    const nowIraq = new Date(Date.now() + 3 * 60 * 60 * 1000); // UTC+3 (no DST)
+    const today   = nowIraq.toISOString().slice(0, 10);
+    const nowTime = nowIraq.toISOString().slice(11, 19);
 
     let query = supabaseAdmin
       .from('bookings')
@@ -202,12 +204,12 @@ exports.getMy = async (req, res, next) => {
 
     if (status === 'past') {
       query = query
-        .lt('booking_date', today)
+        .or(`booking_date.lt.${today},and(booking_date.eq.${today},start_time.lt.${nowTime})`)
         .order('booking_date', { ascending: false })
         .order('start_time', { ascending: false });
     } else {
       query = query
-        .gte('booking_date', today)
+        .or(`booking_date.gt.${today},and(booking_date.eq.${today},start_time.gte.${nowTime})`)
         .order('booking_date', { ascending: true })
         .order('start_time', { ascending: true });
     }
