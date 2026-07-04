@@ -12,7 +12,7 @@ const addMinutes = (timeStr, mins) => {
 };
 
 const BOOKING_SELECT = `
-  id, booking_date, start_time, end_time, duration, price,
+  id, customer_id, booking_date, start_time, end_time, duration, price,
   status, payment_method, payment_status, booking_type,
   customer_note, selected_addons, created_at,
   services ( id, name, duration, price ),
