@@ -52,6 +52,12 @@ exports.create = async (req, res, next) => {
       return error(res, 'لا يمكن الحجز في تاريخ ماضٍ', 400);
     }
 
+    // Validate the exact start moment is not in the past (Iraq local, UTC+3)
+    const startAt = new Date(`${booking_date}T${start_time}+03:00`);
+    if (!isNaN(startAt) && startAt.getTime() < Date.now()) {
+      return error(res, 'لا يمكن الحجز في وقت ماضٍ — اختر موعداً قادماً', 400);
+    }
+
     // Fetch service to get duration and validate it belongs to this business
     const { data: service, error: svcErr } = await supabaseAdmin
       .from('services')
@@ -123,7 +129,6 @@ exports.create = async (req, res, next) => {
     const finalPrice = priceData?.[0]?.final_price ?? service.price;
 
     // Free-cancellation deadline = booking start (Iraq local, UTC+3) minus 24h
-    const startAt = new Date(`${booking_date}T${start_time}+03:00`);
     const freeCancellationUntil = isNaN(startAt)
       ? null
       : new Date(startAt.getTime() - 24 * 60 * 60 * 1000).toISOString();

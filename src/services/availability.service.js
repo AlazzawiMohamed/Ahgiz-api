@@ -23,11 +23,15 @@ const getDayOfWeek = (dateStr) => new Date(dateStr + 'T00:00:00').getDay();
  *
  * @returns {Array<{slot_start, slot_end, is_free}>}
  */
+const IRAQ_OFFSET_MS = 3 * 60 * 60 * 1000; // Iraq is UTC+3 (no DST)
+
 const getAvailableSlots = async ({
   businessId, staffId, date, durationMins, slotIntervalMins = 30,
 }) => {
   const dayOfWeek = getDayOfWeek(date);
-  const isToday   = date === new Date().toISOString().slice(0, 10);
+  // "اليوم" و"الآن" بتوقيت العراق لا بتوقيت الخادم (كان UTC → تسريب مواعيد ماضية حتى 3 ساعات مساءً)
+  const nowIraq = new Date(Date.now() + IRAQ_OFFSET_MS);
+  const isToday = date === nowIraq.toISOString().slice(0, 10);
 
   // ① Business working hours for this day
   const { data: bh } = await supabaseAdmin
@@ -88,11 +92,10 @@ const getAvailableSlots = async ({
 
   if (workStart >= workEnd) return [];
 
-  // ⑤ Skip past times when date is today
+  // ⑤ Skip past times when date is today (Iraq clock via UTC getters on the shifted date)
   let currentStart = workStart;
   if (isToday) {
-    const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes() + 30; // +30 min buffer
+    const nowMins = nowIraq.getUTCHours() * 60 + nowIraq.getUTCMinutes() + 30; // +30 min buffer
     currentStart = Math.max(currentStart, nowMins);
   }
 
