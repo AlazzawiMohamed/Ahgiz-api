@@ -17,7 +17,8 @@ router.use(authenticate);
 
 // Customer self-service medical files (C13.5)
 router.post('/files/upload',          medicalFileUpload, medicalController.uploadMyFile);
+router.get('/files/me',               medicalController.listMyFiles); // identity from token
 router.get('/files/:fileId/signed-url', medicalController.getMyFileSignedUrl);
-router.get('/files/:userId',          medicalController.listMyFiles);
+router.get('/files/:userId',          medicalController.listMyFiles); // legacy — param must equal token id
 
 module.exports = router;

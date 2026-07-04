@@ -232,7 +232,8 @@ exports.uploadFile = async (req, res, next) => {
 // ─── GET /medical/files/:userId ──────────────────────────────────────────────
 exports.listMyFiles = async (req, res, next) => {
   try {
-    if (req.params.userId !== req.user.id) {
+    // /files/me لا يمرّر userId؛ المسار القديم /files/:userId يجب أن يطابق هوية التوكن
+    if (req.params.userId !== undefined && req.params.userId !== req.user.id) {
       return error(res, 'لا يمكنك عرض ملفات مستخدم آخر', 403);
     }
 
