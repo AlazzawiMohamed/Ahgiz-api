@@ -242,7 +242,7 @@ exports.getStaff = async (req, res, next) => {
 // Wraps get_available_slots RPC — returns only free time slots
 exports.getAvailability = async (req, res, next) => {
   try {
-    const { date, service_id, staff_id, slot_interval = '30' } = req.query;
+    const { date, service_id, staff_id, slot_interval = '15' } = req.query;
 
     if (!date)       return error(res, 'date مطلوب (YYYY-MM-DD)', 400);
     if (!service_id) return error(res, 'service_id مطلوب', 400);
