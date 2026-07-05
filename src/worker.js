@@ -7,4 +7,4 @@ const logger = require('./utils/logger');
 require('./queues/whatsapp.queue'); // تهيئة Bull queue processor
 require('./cron/jobs');             // جدولة الـ 12 cron jobs
 
-logger.info('✅ ahgiz-worker: 12 cron jobs + WhatsApp queue active');
+logger.info('✅ ahgiz-worker: 13 cron jobs + WhatsApp queue active');
