@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
+const logger = require('../utils/logger');
 
 const OWNER_BOOKING_SELECT = `
   id, booking_date, start_time, end_time, duration, price,
@@ -158,6 +159,21 @@ exports.completeBooking = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+
+    // Grant loyalty points for the completed visit (C17).
+    // NON-FATAL: rule_type 'per_visit' → grant_loyalty_points maps it to a
+    // 'visit_reward' transaction. If it fails (no active rule / unfunded business
+    // balance / manual booking with no customer), the completion still succeeds.
+    const { error: pointsError } = await supabaseAdmin.rpc('grant_loyalty_points', {
+      p_business_id: req.business.id,
+      p_customer_id: data.customer?.id,
+      p_booking_id:  req.params.id,
+      p_rule_type:   'per_visit',
+    });
+    if (pointsError) {
+      logger.warn('grant_loyalty_points failed (non-fatal):', pointsError.message);
+    }
+
     return success(res, data, 'تم إتمام الحجز بنجاح');
   } catch (err) {
     next(err);
