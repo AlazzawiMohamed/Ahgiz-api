@@ -211,6 +211,7 @@ exports.getMy = async (req, res, next) => {
 
     if (status === 'past') {
       query = query
+        .is('hidden_by_customer_at', null)
         .or(`booking_date.lt.${today},and(booking_date.eq.${today},start_time.lt.${nowTime})`)
         .order('booking_date', { ascending: false })
         .order('start_time', { ascending: false });
@@ -346,6 +347,35 @@ exports.cancel = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     return success(res, updated, 'تم إلغاء الحجز');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── PUT /bookings/:id/hide ───────────────────────────────────────────────────
+// إخفاء الحجز من قائمة العميل فقط (soft-hide) — البيانات لا تُحذف ويبقى ظاهراً للمحل.
+exports.hide = async (req, res, next) => {
+  try {
+    const { data: booking } = await supabaseAdmin
+      .from('bookings')
+      .select('id, customer_id')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!booking) return error(res, 'الحجز غير موجود', 404);
+
+    if (booking.customer_id !== req.user.id) {
+      return error(res, 'ليس لديك صلاحية لهذا الحجز', 403);
+    }
+
+    const { error: dbErr } = await supabaseAdmin
+      .from('bookings')
+      .update({ hidden_by_customer_at: new Date().toISOString() })
+      .eq('id', booking.id);
+
+    if (dbErr) throw dbErr;
+
+    return success(res, { id: booking.id }, 'تم حذف الحجز من قائمتك');
   } catch (err) {
     next(err);
   }

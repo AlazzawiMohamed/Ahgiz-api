@@ -11,5 +11,6 @@ router.get('/:id',            bookingController.getById);
 router.post('/:id/confirm',   bookingController.confirm);
 router.put('/:id/cancel',         bookingController.cancel);
 router.put('/:id/cancel-request', bookingController.cancelRequest);
+router.put('/:id/hide',           bookingController.hide);
 
 module.exports = router;
