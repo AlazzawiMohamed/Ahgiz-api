@@ -73,9 +73,10 @@ exports.getMine = async (req, res, next) => {
       .select(`
         id, created_at, sort_order, note,
         businesses (
-          id, name, address, province, logo_url, cover_url,
+          id, name, province, logo_url, cover_url,
           rating_avg, rating_count, is_featured, current_plan_code,
-          categories ( id, slug, name_ar, icon_url )
+          categories ( id, slug, name_ar, name_en, name_ku, icon_url ),
+          services ( price, is_active )
         )
       `, { count: 'exact' })
       .eq('customer_id', req.user.id)
@@ -85,11 +86,38 @@ exports.getMine = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
+    // Flatten business details to the top level; expose the favorite row id as
+    // favorite_id and the business id as business_id (used by the client for
+    // navigation + the DELETE call). min_price is derived from active services.
+    const favorites = (data || []).map((f) => {
+      const b = f.businesses || {};
+      const prices = (b.services || [])
+        .filter((s) => s.is_active && s.price != null)
+        .map((s) => Number(s.price));
+      return {
+        favorite_id:       f.id,
+        business_id:       b.id ?? null,
+        name:              b.name ?? null,
+        logo_url:          b.logo_url ?? null,
+        cover_url:         b.cover_url ?? null,
+        rating_avg:        b.rating_avg ?? null,
+        rating_count:      b.rating_count ?? null,
+        province:          b.province ?? null,
+        is_featured:       b.is_featured ?? null,
+        current_plan_code: b.current_plan_code ?? null,
+        categories:        b.categories ?? null,
+        min_price:         prices.length ? Math.min(...prices) : null,
+        created_at:        f.created_at,
+        sort_order:        f.sort_order,
+        note:              f.note,
+      };
+    });
+
     return success(res, {
-      favorites: data,
-      total:     count,
-      page:      +page,
-      limit:     +limit,
+      favorites,
+      total: count,
+      page:  +page,
+      limit: +limit,
     });
   } catch (err) {
     next(err);
