@@ -23,7 +23,16 @@ exports.getProfile = async (req, res, next) => {
       province_name = gov?.name_ar || null;
     }
 
-    return success(res, { ...user, province_name });
+    // Loyalty points live in the customer_points_balance view (not on users) —
+    // attach for the profile header. No row → 0 points.
+    const { data: bal } = await supabaseAdmin
+      .from('customer_points_balance')
+      .select('balance')
+      .eq('customer_id', user.id)
+      .maybeSingle();
+    const loyalty_points = bal?.balance ?? 0;
+
+    return success(res, { ...user, province_name, loyalty_points });
   } catch (err) {
     next(err);
   }
@@ -105,7 +114,14 @@ exports.updateProfile = async (req, res, next) => {
       province_name = gov?.name_ar || null;
     }
 
-    return success(res, { ...data, province_name }, 'تم تحديث الملف الشخصي');
+    // Mirror getProfile: attach loyalty points from customer_points_balance
+    const { data: bal } = await supabaseAdmin
+      .from('customer_points_balance')
+      .select('balance')
+      .eq('customer_id', data.id)
+      .maybeSingle();
+
+    return success(res, { ...data, province_name, loyalty_points: bal?.balance ?? 0 }, 'تم تحديث الملف الشخصي');
   } catch (err) {
     next(err);
   }
