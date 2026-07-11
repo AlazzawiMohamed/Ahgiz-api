@@ -360,6 +360,7 @@ exports.getBookings = async (req, res, next) => {
 };
 
 // ─── PUT /admin/bookings/:id/cancel ───────────────────────────────────────────
+// يمرّ عبر cancel_booking_with_fee: الأدمن يلغي pending/confirmed/no_show؛ completed/cancelled محجوب للجميع.
 exports.cancelBooking = async (req, res, next) => {
   try {
     const { reason } = req.body;
@@ -368,17 +369,16 @@ exports.cancelBooking = async (req, res, next) => {
     const { data: booking } = await supabaseAdmin
       .from('bookings').select('id, status').eq('id', req.params.id).single();
     if (!booking) return error(res, 'الحجز غير موجود', 404);
-    if (['cancelled', 'completed'].includes(booking.status)) {
-      return error(res, 'لا يمكن إلغاء حجز ملغى أو مكتمل', 400);
-    }
 
-    const { data, error: dbErr } = await supabaseAdmin
-      .from('bookings')
-      .update({ status: 'cancelled', cancelled_by: 'admin', cancel_reason: reason, updated_at: new Date().toISOString() })
-      .eq('id', req.params.id)
-      .select('id, status, cancelled_by, cancel_reason')
-      .single();
+    const { data, error: dbErr } = await supabaseAdmin.rpc('cancel_booking_with_fee', {
+      p_booking_id:   req.params.id,
+      p_cancelled_by: req.user.id,
+      p_reason:       reason,
+    });
     if (dbErr) throw dbErr;
+    if (data && data.success === false) {
+      return error(res, data.message || 'تعذّر إلغاء الحجز', 400);
+    }
 
     await logAdmin(req, { action: 'cancel_booking', target_type: 'booking', target_id: booking.id, before: { status: booking.status }, after: data });
     return success(res, data, 'تم إلغاء الحجز');

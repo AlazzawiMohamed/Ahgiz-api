@@ -306,6 +306,8 @@ exports.confirm = async (req, res, next) => {
 };
 
 // ─── PUT /bookings/:id/cancel ─────────────────────────────────────────────────
+// يمرّ عبر cancel_booking_with_fee: رسوم + استرداد + إشعارات + عكس نقاط + قائمة انتظار.
+// حارس الحالة (pending/confirmed للزبون) داخل الـRPC.
 exports.cancel = async (req, res, next) => {
   try {
     // سبب الإلغاء نص حر اختياري (كان قائمة رموز ثابتة)
@@ -316,9 +318,10 @@ exports.cancel = async (req, res, next) => {
     }
     const cancelReason = (cancel_reason_code || '').trim().slice(0, 200) || null;
 
+    // فحص الملكية — الـRPC يشتقّ الدور لكنه لا يتحقّق أن المستدعي يملك الحجز
     const { data: booking } = await supabaseAdmin
       .from('bookings')
-      .select('id, customer_id, status, business_id, booking_date, start_time, price')
+      .select('id, customer_id')
       .eq('id', req.params.id)
       .single();
 
@@ -328,25 +331,19 @@ exports.cancel = async (req, res, next) => {
       return error(res, 'ليس لديك صلاحية لإلغاء هذا الحجز', 403);
     }
 
-    if (['cancelled', 'completed', 'no_show'].includes(booking.status)) {
-      return error(res, `لا يمكن إلغاء حجز بحالة: ${booking.status}`, 400);
-    }
-
-    const { data: updated, error: dbErr } = await supabaseAdmin
-      .from('bookings')
-      .update({
-        status:        'cancelled',
-        cancel_reason: cancelReason,
-        cancelled_by:  req.user.role === 'customer' ? 'customer' : req.user.role,
-        cancelled_at:  new Date().toISOString(),
-      })
-      .eq('id', req.params.id)
-      .select(BOOKING_SELECT)
-      .single();
+    const { data, error: dbErr } = await supabaseAdmin.rpc('cancel_booking_with_fee', {
+      p_booking_id:   req.params.id,
+      p_cancelled_by: req.user.id,
+      p_reason:       cancelReason,
+    });
 
     if (dbErr) throw dbErr;
 
-    return success(res, updated, 'تم إلغاء الحجز');
+    if (data && data.success === false) {
+      return error(res, data.message || 'تعذّر إلغاء الحجز', 400);
+    }
+
+    return success(res, data, 'تم إلغاء الحجز');
   } catch (err) {
     next(err);
   }
