@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
-const { sendWhatsAppOTP, validateIraqiPhone } = require('../services/whatsapp.service');
+const { sendWhatsAppOTP, generateOtp, validateIraqiPhone } = require('../services/whatsapp.service');
 const logger = require('../utils/logger');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -89,14 +89,14 @@ exports.sendOtp = async (req, res, next) => {
       .eq('phone', normalized)
       .maybeSingle();
 
-    const otp = String(crypto.randomInt(100000, 999999));
+    const otp = generateOtp();
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(
       Date.now() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60 * 1000
     ).toISOString();
     const { ip_address } = getClientMeta(req);
 
-    const { error: dbErr } = await supabaseAdmin
+    const { data: session, error: dbErr } = await supabaseAdmin
       .from('whatsapp_otp_sessions')
       .insert({
         phone_number: normalized,
@@ -106,11 +106,23 @@ exports.sendOtp = async (req, res, next) => {
         status: 'pending',
         expires_at: expiresAt,
         ip_address,
-      });
+      })
+      .select('id')
+      .single();
 
     if (dbErr) throw dbErr;
 
-    const waResult = await sendWhatsAppOTP(normalized, otp);
+    // الصفّ أُدرج قبل الإرسال. لو فشل الإرسال وتُرك الصفّ 'pending' فإن حارس إعادة
+    // الإرسال أدناه سيقول للمستخدم "انتظر N ثانية" رغم أنه لم يستلم شيئاً — لذا نُبطله.
+    try {
+      await sendWhatsAppOTP(normalized, otp);
+    } catch (waErr) {
+      await supabaseAdmin
+        .from('whatsapp_otp_sessions')
+        .update({ status: 'failed' })
+        .eq('id', session.id);
+      throw waErr;
+    }
 
     logger.info(`OTP sent → ${normalized.slice(0, 7)}**** (${existingUser ? 'login' : 'register'})`);
 
@@ -118,7 +130,6 @@ exports.sendOtp = async (req, res, next) => {
       phone: normalized,
       expiresIn: parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60,
       isNewUser: !existingUser,
-      ...(waResult?.dev ? { devOtp: waResult.otp } : {}),
     }, 'تم إرسال كود التحقق عبر واتساب');
   } catch (err) {
     next(err);

@@ -11,6 +11,9 @@ const fs = require('fs');
 
 if (!fs.existsSync('logs')) fs.mkdirSync('logs');
 
+// تحقّق من الإعداد قبل أي شيء آخر — إعداد إنتاج خاطئ يجب ألّا يقلع أصلاً.
+require('./utils/config').validateEnv({ service: 'api' });
+
 // تهيئة Sentry مبكراً (no-op بدون SENTRY_DSN أو بدون الحزمة)
 sentry.init();
 

@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
-const { sendWhatsAppOTP } = require('../services/whatsapp.service');
+const { sendWhatsAppOTP, generateOtp } = require('../services/whatsapp.service');
 const logger = require('../utils/logger');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ exports.login = async (req, res, next) => {
       .eq('session_type', '2fa')
       .eq('status', 'pending');
 
-    const otp = String(crypto.randomInt(100000, 999999));
+    const otp = generateOtp();
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(
       Date.now() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60 * 1000
@@ -85,14 +85,23 @@ exports.login = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
-    const waResult = await sendWhatsAppOTP(admin.phone, otp);
+    // فشل الإرسال يترك جلسة 2FA معلّقة بلا فائدة — نُبطلها كي لا تتراكم ولا تُربك الحارس.
+    try {
+      await sendWhatsAppOTP(admin.phone, otp);
+    } catch (waErr) {
+      await supabaseAdmin
+        .from('whatsapp_otp_sessions')
+        .update({ status: 'failed' })
+        .eq('id', session.id);
+      throw waErr;
+    }
+
     logger.info(`Admin 2FA OTP sent → ${admin.email} (${admin.phone.slice(0, 7)}****)`);
 
     return success(res, {
       requires_2fa: true,
       challenge:    session.id,
       expiresIn:    parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60,
-      ...(waResult?.dev ? { devOtp: waResult.otp } : {}),
     }, 'تم إرسال رمز التحقق عبر واتساب');
   } catch (err) {
     next(err);
