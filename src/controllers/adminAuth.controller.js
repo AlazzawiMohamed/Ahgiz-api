@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
 const { sendWhatsAppOTP, generateOtp } = require('../services/whatsapp.service');
+const { sendAdminOtpEmail, emailConfigured } = require('../services/email.service');
 const logger = require('../utils/logger');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ exports.login = async (req, res, next) => {
 
     const { data: admin } = await supabaseAdmin
       .from('users')
-      .select('id, full_name, email, phone, role, password_hash, is_active, is_banned')
+      .select('id, full_name, email, phone, role, password_hash, is_active, is_banned, admin_email_verified_at')
       .eq('email', String(email).trim().toLowerCase())
       .eq('role', 'admin')
       .is('deleted_at', null)
@@ -85,24 +86,54 @@ exports.login = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
-    // فشل الإرسال يترك جلسة 2FA معلّقة بلا فائدة — نُبطلها كي لا تتراكم ولا تُربك الحارس.
+    // ── تسليم الرمز: واتساب أولاً، ثم البريد كقناة ثانية للرمز نفسه ──────────
+    // البريد قناة تسليم لا آلية مصادقة: نفس الـ otp، نفس الجلسة المُجزّأة أعلاه،
+    // ونفس مسار verify-2fa بلا تغيير. لا يُولَّد رمز ثانٍ ولا تُنشأ جلسة ثانية.
+    let channel = null;
+
     try {
       await sendWhatsAppOTP(admin.phone, otp);
+      channel = 'whatsapp';
     } catch (waErr) {
+      // بريد غير موثّق = ليس قناة موثوقة (يمكن تغييره عبر PUT /users/me).
+      // لا نرسل "على أمل" — نتخطّاه إلى الطبقة 3.
+      if (admin.admin_email_verified_at && emailConfigured()) {
+        try {
+          await sendAdminOtpEmail(admin.email, otp);
+          channel = 'email';
+          logger.warn(`Admin 2FA fell back to email — WhatsApp failed (${admin.email})`);
+        } catch (mailErr) {
+          logger.error('Admin 2FA: both WhatsApp and email delivery failed');
+        }
+      } else {
+        logger.error(
+          `Admin 2FA: WhatsApp failed and email unavailable ` +
+            `(verified=${Boolean(admin.admin_email_verified_at)}, configured=${emailConfigured()})`
+        );
+      }
+    }
+
+    // فشل كل القنوات ⇒ fail-closed. لا نترك الجلسة 'pending' وإلا تراكمت بلا فائدة.
+    if (!channel) {
       await supabaseAdmin
         .from('whatsapp_otp_sessions')
         .update({ status: 'failed' })
         .eq('id', session.id);
-      throw waErr;
+      throw Object.assign(new Error('تعذّر إرسال رمز التحقق عبر أي قناة. راجع المسؤول.'), {
+        statusCode: 503,
+      });
     }
 
-    logger.info(`Admin 2FA OTP sent → ${admin.email} (${admin.phone.slice(0, 7)}****)`);
+    logger.info(`Admin 2FA OTP sent via ${channel} → ${admin.email} (${admin.phone.slice(0, 7)}****)`);
 
     return success(res, {
       requires_2fa: true,
       challenge:    session.id,
       expiresIn:    parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60,
-    }, 'تم إرسال رمز التحقق عبر واتساب');
+      channel,   // أين وصل الرمز — ليس سرّاً، وتحتاجه الواجهة لعرض الرسالة الصحيحة
+    }, channel === 'email'
+        ? 'تعذّر واتساب — أُرسل رمز التحقق إلى بريدك'
+        : 'تم إرسال رمز التحقق عبر واتساب');
   } catch (err) {
     next(err);
   }
@@ -200,6 +231,51 @@ exports.verify2fa = async (req, res, next) => {
       admin_token,
       admin: { id: admin.id, full_name: admin.full_name, email: admin.email },
     }, 'تم تسجيل الدخول بنجاح');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── GET /admin/auth/verify-email?token=… ─────────────────────────────────────
+// يوثّق بريد الأدمن مرّة واحدة. عام عمداً: امتلاك التوكن (32 بايت عشوائية أُرسلت
+// إلى الصندوق فقط) هو نفسه إثبات التحكّم بالصندوق — وهو بالضبط ما نوثّقه.
+// التوكن يُطلب عبر سكربت المالك (scripts/send-admin-email-verification.js) لأن
+// الأدمن لا يستطيع تسجيل الدخول أصلاً قبل وجود قناة تسليم.
+exports.verifyEmail = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+    if (!token) return error(res, 'التوكن مطلوب', 400);
+
+    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+
+    const { data: admin } = await supabaseAdmin
+      .from('users')
+      .select('id, email, admin_email_verify_expires_at')
+      .eq('admin_email_verify_token_hash', tokenHash)
+      .eq('role', 'admin')
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    // رسالة واحدة عامة للتوكن الخاطئ والمنتهي — لا نكشف أيّهما.
+    if (!admin || new Date(admin.admin_email_verify_expires_at) < new Date()) {
+      return error(res, 'رابط التوثيق غير صالح أو منتهي', 400);
+    }
+
+    // استخدام واحد: نمسح التوكن مع ختم التوثيق في نفس الكتابة.
+    const { error: dbErr } = await supabaseAdmin
+      .from('users')
+      .update({
+        admin_email_verified_at:       new Date().toISOString(),
+        admin_email_verify_token_hash: null,
+        admin_email_verify_expires_at: null,
+      })
+      .eq('id', admin.id)
+      .eq('admin_email_verify_token_hash', tokenHash); // حارس تزامن: أول استخدام فقط ينجح
+
+    if (dbErr) throw dbErr;
+
+    logger.info(`Admin email verified → ${admin.email}`);
+    return success(res, { verified: true }, 'تم توثيق البريد. صار قناة احتياطية لرمز الدخول.');
   } catch (err) {
     next(err);
   }

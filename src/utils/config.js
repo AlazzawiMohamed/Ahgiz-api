@@ -81,8 +81,17 @@ const validateEnv = ({ service }) => {
     );
   }
 
+  // الطبقة 2 (بريد) اختيارية، لكن غيابها مع تعطّل واتساب يعني: لا قناة لرمز الأدمن إطلاقاً.
+  const emailReady = Boolean(process.env.RESEND_API_KEY);
+  if (transport === 'disabled' && !emailReady) {
+    logger.warn(
+      '⚠️  لا توجد أي قناة لتسليم رمز الأدمن: واتساب معطّل و RESEND_API_KEY غير مضبوط. ' +
+        'دخول الأدمن غير ممكن حتى تُبنى الطبقة 3 (رمز الطوارئ).'
+    );
+  }
+
   logger.info(
-    `Config OK — service=${service} transport=${transport} ` +
+    `Config OK — service=${service} transport=${transport} email=${emailReady ? 'ready' : 'off'} ` +
       `NODE_ENV=${process.env.NODE_ENV || '(unset)'} railway=${isRailwayDeploy()}`
   );
 
