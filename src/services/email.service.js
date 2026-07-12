@@ -13,7 +13,11 @@ const RESEND_URL = 'https://api.resend.com/emails';
 // ⚠️ قيد معروف: onboarding@resend.dev لا يسلّم إلا إلى بريد صاحب حساب Resend نفسه.
 const FROM = process.env.RESEND_FROM || 'احجز <onboarding@resend.dev>';
 
-const emailConfigured = () => Boolean(process.env.RESEND_API_KEY);
+// النسخ من صفحة ويب يلصق أحياناً محارف Unicode خفيّة (U+2028 مثلاً) في نهاية المفتاح،
+// فلا تظهر في أي محرّر لكنها تُرسَل مع الترويسة فيرفضها المزوّد بـ401. trim() يزيلها.
+const resendKey = () => String(process.env.RESEND_API_KEY || '').trim();
+
+const emailConfigured = () => Boolean(resendKey());
 
 // خطأ مُعقَّم: لا يحمل الرمز ولا المفتاح ولا كائن axios الأصلي
 // (err.config يحوي Authorization: Bearer <RESEND_API_KEY> ونصّ الرسالة ومعه الرمز).
@@ -36,7 +40,7 @@ const post = async (payload, to) => {
   try {
     const { data } = await axios.post(RESEND_URL, payload, {
       headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        Authorization: `Bearer ${resendKey()}`,
         'Content-Type': 'application/json',
       },
       timeout: 10000,
