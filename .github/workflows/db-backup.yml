@@ -1,0 +1,128 @@
+name: Daily Database Backup
+
+# Backs up the Supabase Postgres database to Cloudflare R2 once per day.
+on:
+  schedule:
+    # 02:00 UTC == 05:00 Baghdad time (Asia/Baghdad is UTC+3, no DST)
+    - cron: "0 2 * * *"
+  workflow_dispatch: {}
+
+# No repository contents are needed for this job.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  backup:
+    name: Backup database to R2
+    runs-on: ubuntu-latest
+    env:
+      # Non-secret connection details (password is injected per-step from secrets).
+      PGHOST: aws-1-eu-north-1.pooler.supabase.com
+      PGPORT: "5432"
+      PGUSER: postgres.xyodravayoyrlzfnbwfu
+      PGDATABASE: postgres
+      # R2 is S3-compatible; drive it through the AWS CLI.
+      AWS_DEFAULT_REGION: auto
+      # Cloudflare R2 rejects the default integrity checksums that AWS CLI v2.23+
+      # sends, so only calculate/validate them when the operation requires it.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates
+          # Add the official PostgreSQL apt repository (PGDG) with a signed keyring.
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          pg_dump --version
+
+      - name: Create database backup
+        id: dump
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BACKUP_FILE="backup-$(date -u +%Y-%m-%d-%H-%M).sql.gz"
+          echo "Creating backup: ${BACKUP_FILE}"
+          # Schema + data for the whole database. pipefail makes the step fail
+          # if pg_dump errors even though gzip on the right side succeeds.
+          pg_dump --no-password \
+            -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+            | gzip -9 > "$BACKUP_FILE"
+          BACKUP_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"
+          echo "Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
+          echo "backup_file=${BACKUP_FILE}" >> "$GITHUB_OUTPUT"
+          echo "backup_size=${BACKUP_SIZE}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload backup to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          BACKUP_FILE: ${{ steps.dump.outputs.backup_file }}
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws s3 cp "$BACKUP_FILE" "s3://${R2_BUCKET_NAME}/${BACKUP_FILE}" \
+            --endpoint-url "$ENDPOINT"
+          echo "Uploaded ${BACKUP_FILE} to R2 bucket ${R2_BUCKET_NAME}"
+
+      - name: Delete backups older than 30 days
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          CUTOFF="$(date -u -d '30 days ago' +%Y-%m-%d)"
+          echo "Removing backups dated before ${CUTOFF}"
+          # Listing must not abort the step if the bucket is empty.
+          LISTING="$(aws s3 ls "s3://${R2_BUCKET_NAME}/" --endpoint-url "$ENDPOINT" || true)"
+          echo "$LISTING" | awk '{print $4}' | while read -r KEY; do
+            [ -z "$KEY" ] && continue
+            # Pull the YYYY-MM-DD out of backup-YYYY-MM-DD-HH-MM.sql.gz
+            FILE_DATE="$(echo "$KEY" | sed -n -E 's/^backup-([0-9]{4}-[0-9]{2}-[0-9]{2})-.*/\1/p')"
+            [ -z "$FILE_DATE" ] && continue
+            # Dates are zero-padded, so lexical comparison equals chronological.
+            if [[ "$FILE_DATE" < "$CUTOFF" ]]; then
+              echo "Deleting old backup: ${KEY} (${FILE_DATE})"
+              aws s3 rm "s3://${R2_BUCKET_NAME}/${KEY}" --endpoint-url "$ENDPOINT"
+            fi
+          done
+
+      - name: Send Telegram notification
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+          BACKUP_FILE: ${{ steps.dump.outputs.backup_file }}
+          BACKUP_SIZE: ${{ steps.dump.outputs.backup_size }}
+        run: |
+          set -euo pipefail
+          DATE="$(date -u +'%Y-%m-%d %H:%M UTC')"
+          if [ "$JOB_STATUS" = "success" ]; then
+            HEADER="✅ Database backup succeeded"
+          else
+            HEADER="❌ Database backup FAILED"
+          fi
+          # %0A is a URL-encoded newline for the form-encoded Telegram payload.
+          MESSAGE="${HEADER}%0ADate: ${DATE}%0AStatus: ${JOB_STATUS}%0AFile: ${BACKUP_FILE:-not created}%0ASize: ${BACKUP_SIZE:-N/A}"
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${MESSAGE}" \
+            -d "disable_web_page_preview=true"
