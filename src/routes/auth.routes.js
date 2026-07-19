@@ -1,20 +1,10 @@
 const express = require('express');
-const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
 const { authenticate } = require('../middleware/auth');
+const { otpLimiter } = require('../middleware/rateLimiter');
 const validate = require('../middleware/validate');
 const authSchema = require('../schemas/auth.schema');
-
-// Strict rate limit for OTP endpoints to prevent abuse
-const otpLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10,
-  keyGenerator: (req) => req.body?.phone || req.ip,
-  message: { status: 'error', message: 'طلبات كثيرة جداً، حاول بعد ساعة' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 // validate runs after otpLimiter: the limiter derives its per-phone key from the raw
 // body itself, so validation must not sit in front of it.

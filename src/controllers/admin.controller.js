@@ -1,7 +1,12 @@
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
+const { clientIp } = require('../utils/request');
 
 // ─── سجل تدقيق الأدمن (يُستدعى بعد كل عملية كتابة) ─────────────────────────────
+// ip_address used to be `req.ip || x-forwarded-for` — wrong on both sides: req.ip is
+// always truthy so the second branch was dead code, and without trust proxy req.ip was
+// Railway's edge IP. Every row in this log up to now carries the proxy's IP, not the
+// admin's. See utils/request.js.
 const logAdmin = async (req, { action, target_type = null, target_id = null, before = null, after = null }) => {
   try {
     await supabaseAdmin.from('admin_audit_log').insert({
@@ -11,7 +16,12 @@ const logAdmin = async (req, { action, target_type = null, target_id = null, bef
       target_id,
       before_data: before,
       after_data:  after,
-      ip_address:  req.ip || req.headers['x-forwarded-for']?.split(',')[0] || null,
+      // Where did this session come from? Carried in the token and propagated by
+      // authenticate. We do NOT hardcode 'password_2fa': an admin who entered via
+      // break-glass and then deleted a user must show up tagged 'breakglass', not
+      // laundered into the normal path.
+      ip_address:  clientIp(req),
+      auth_method: req.user?.auth_method || null,
     });
   } catch (e) {
     // لا نُفشل العملية بسبب فشل التسجيل
@@ -681,6 +691,14 @@ exports.updateSetting = async (req, res, next) => {
       .eq('key', key)
       .select('key, value, description, updated_at')
       .single();
+
+    // Database guards reject certain edits (e.g. disabling both security alert
+    // channels at once). Without this mapping the rejection reaches the UI as an
+    // opaque 500, looking like a malfunction rather than a deliberate rule.
+    // 23514 = check_violation | 42501 = insufficient_privilege — both carry a clear
+    // message from the trigger itself, so we pass it through as-is.
+    if (dbErr?.code === '23514') return error(res, dbErr.message, 400);
+    if (dbErr?.code === '42501') return error(res, dbErr.message, 403);
     if (dbErr) throw dbErr;
 
     await logAdmin(req, { action: 'update_setting', target_type: 'setting', target_id: null, before: { key, value: before.value }, after: data });

@@ -3,7 +3,9 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
-const { sendWhatsAppOTP, generateOtp, validateIraqiPhone } = require('../services/whatsapp.service');
+const { sendWhatsAppOTP, generateOtp } = require('../services/whatsapp.service');
+const { normalizeIraqiPhone } = require('../utils/phone');
+const { clientIp, userAgent } = require('../utils/request');
 const logger = require('../utils/logger');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -20,9 +22,12 @@ const signAccess = (payload) =>
 const generateRefreshToken = () => crypto.randomBytes(64).toString('hex');
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
+// ip_address used to be `req.ip || x-forwarded-for` — the second branch was dead code
+// (req.ip is always truthy), and the first was Railway's edge IP before trust proxy
+// was configured. See utils/request.js.
 const getClientMeta = (req) => ({
-  ip_address: req.ip || req.headers['x-forwarded-for']?.split(',')[0] || null,
-  device_info: req.headers['user-agent'] || null,
+  ip_address: clientIp(req),
+  device_info: userAgent(req),
   device_id: req.headers['x-device-id'] || null,
   device_name: req.headers['x-device-name'] || null,
 });
@@ -34,7 +39,7 @@ exports.sendOtp = async (req, res, next) => {
     const { phone } = req.body;
     if (!phone) return error(res, 'رقم الهاتف مطلوب', 400);
 
-    const normalized = validateIraqiPhone(phone);
+    const normalized = normalizeIraqiPhone(phone);
     if (!normalized) return error(res, 'رقم الهاتف العراقي غير صحيح (مثال: 07701234567)', 400);
 
     // Check blocked_until
@@ -143,7 +148,7 @@ exports.verifyOtp = async (req, res, next) => {
     const { phone, otp, full_name } = req.body;
     if (!phone || !otp) return error(res, 'رقم الهاتف والكود مطلوبان', 400);
 
-    const normalized = validateIraqiPhone(phone);
+    const normalized = normalizeIraqiPhone(phone);
     if (!normalized) return error(res, 'رقم الهاتف غير صحيح', 400);
 
     // Load latest pending, non-expired session

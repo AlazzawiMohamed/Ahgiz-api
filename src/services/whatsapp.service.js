@@ -2,25 +2,14 @@ const axios = require('axios');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { whatsappTransport } = require('../utils/config');
+const { normalizeIraqiPhone } = require('../utils/phone');
+// Dev-only OTP channel. Safe to import: telegram.service does not require this file (no cycle),
+// and this transport can never be selected in production (see the guard in utils/config.js).
+const { sendMessage: sendTelegram } = require('./telegram.service');
 
 // الرمز الثابت في وضع التطوير. ليس سرّاً: تطبيق التطوير يعبّئه من ثابت في البناء،
 // والخادم لا يُرجعه في أي استجابة ولا يمرّ عبر الشبكة إطلاقاً.
 const DEV_OTP = '000000';
-
-// Normalize Iraqi phone: 07xxxxxxxx → 9647xxxxxxxx
-const normalizeIraqiPhone = (phone) => {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.startsWith('964')) return digits;
-  if (digits.startsWith('0')) return `964${digits.slice(1)}`;
-  if (digits.startsWith('7')) return `964${digits}`;
-  return digits;
-};
-
-const validateIraqiPhone = (phone) => {
-  const normalized = normalizeIraqiPhone(phone);
-  // Iraqi mobile: 9647[7|8|9|3|5]xxxxxxx
-  return /^9647[3578]\d{8}$/.test(normalized) ? normalized : null;
-};
 
 // لا نسجّل رقماً كاملاً أبداً — ولا نسجّل الرمز إطلاقاً في أي بيئة.
 const maskPhone = (phone) => (phone ? `${String(phone).slice(0, 7)}****` : 'unknown');
@@ -72,7 +61,7 @@ const postToUltraMsg = async (normalized, message) => {
 
 // إرسال رمز التحقق. لا يُرجع الرمز — ولا أي أثر له — في أي بيئة وعلى أي مسار.
 const sendWhatsAppOTP = async (phone, otp) => {
-  const normalized = validateIraqiPhone(phone);
+  const normalized = normalizeIraqiPhone(phone);
   if (!normalized) throw invalidPhoneError();
 
   const transport = whatsappTransport();
@@ -88,6 +77,21 @@ const sendWhatsAppOTP = async (phone, otp) => {
     return { success: true, transport: 'console' };
   }
 
+  if (transport === 'telegram-dev') {
+    // Dev-only: deliver the real (random) code to the admin's own Telegram chat instead of
+    // WhatsApp/UltraMsg, so login can be tested without a real device. The config validator
+    // fatal()s if this transport is set outside development, so this never runs in production.
+    try {
+      await sendTelegram(`🔑 OTP for ${normalized}: ${otp}`);
+      return { success: true, transport: 'telegram-dev' };
+    } catch (err) {
+      // Log only err.message (never the error object): an axios failure carries the message
+      // text — and therefore the code — in err.config.data. err.message never does.
+      logger.error('telegram-dev OTP send failed', { to: maskPhone(normalized), error: err.message });
+      throw transportError();
+    }
+  }
+
   const message =
     `🔐 كودك لتطبيق احجز:\n\n` +
     `*${otp}*\n\n` +
@@ -99,7 +103,7 @@ const sendWhatsAppOTP = async (phone, otp) => {
 
 // ── Generic message sender (notifications, reminders, campaigns) ──────────────
 const sendWhatsAppMessage = async (phone, message) => {
-  const normalized = validateIraqiPhone(phone);
+  const normalized = normalizeIraqiPhone(phone);
   if (!normalized) throw invalidPhoneError();
 
   const transport = whatsappTransport();
@@ -112,6 +116,18 @@ const sendWhatsAppMessage = async (phone, message) => {
   if (transport === 'console') {
     logger.info(`[console] WhatsApp → ${maskPhone(normalized)}: ${message.slice(0, 60)}`);
     return { success: true, transport: 'console' };
+  }
+
+  if (transport === 'telegram-dev') {
+    // Route generic messages (notifications, reminders) to Telegram as well, so telegram-dev
+    // never falls through to UltraMsg — otherwise a real WhatsApp message would be sent in dev.
+    try {
+      await sendTelegram(`💬 [dev] WhatsApp → ${normalized}:\n${message}`);
+      return { success: true, transport: 'telegram-dev' };
+    } catch (err) {
+      logger.error('telegram-dev message send failed', { to: maskPhone(normalized), error: err.message });
+      throw transportError();
+    }
   }
 
   return postToUltraMsg(normalized, message);
@@ -144,6 +160,5 @@ module.exports = {
   sendWhatsAppWithRetry,
   generateOtp,
   normalizeIraqiPhone,
-  validateIraqiPhone,
   DEV_OTP,
 };

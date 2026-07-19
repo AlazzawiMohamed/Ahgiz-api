@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
+const { clientIp } = require('../utils/request');
 
 exports.getProfile = async (req, res, next) => {
   try {
@@ -137,7 +138,10 @@ const CONSENT_TERMS_VERSION   = '1.0';
 // from the request body.
 exports.recordConsent = async (req, res, next) => {
   try {
-    const ip = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || null;
+    // Legal consent evidence: recording the proxy's IP here strips the record of its
+    // evidentiary value. It was logging Railway's edge before trust proxy was
+    // configured. See utils/request.js.
+    const ip = clientIp(req);
 
     const { error: rpcErr } = await supabaseAdmin.rpc('record_user_consent', {
       p_user_id:        req.user.id,

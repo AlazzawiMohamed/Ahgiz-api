@@ -43,7 +43,12 @@ const authenticate = async (req, res, next) => {
     return error(res, 'الجلسة ملغاة — سجل دخولك مجدداً', 401);
   }
 
-  req.user = { id: user.id, phone: user.phone, role: user.role };
+  // auth_method comes from the token, not the database: it is a property of the
+  // SESSION, not of the user. Only admin tokens carry it ('password_2fa' |
+  // 'breakglass'), so the tag reaches every admin_audit_log row — meaning actions
+  // taken by an admin who entered via break-glass are visibly marked as such.
+  // Regular user tokens do not carry it => undefined => NULL in the log.
+  req.user = { id: user.id, phone: user.phone, role: user.role, auth_method: decoded.auth_method };
   next();
 };
 
