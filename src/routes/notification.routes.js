@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const notifController = require('../controllers/notification.controller');
 const { authenticate, authorize } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const notificationSchema = require('../schemas/notification.schema');
 
 router.use(authenticate);
 
@@ -11,6 +13,6 @@ router.delete('/all',       notifController.deleteAll); // before /:id to avoid 
 router.get('/',             notifController.getMine);
 router.put('/:id/read',     notifController.readOne);
 router.delete('/:id',       notifController.deleteOne);
-router.post('/send',        authorize('admin'), notifController.send);
+router.post('/send',        authorize('admin'), validate(notificationSchema.send), notifController.send);
 
 module.exports = router;
