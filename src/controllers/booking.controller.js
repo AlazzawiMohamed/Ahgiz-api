@@ -203,7 +203,9 @@ const MY_BOOKING_SELECT = `
 `;
 
 // ─── GET /bookings/my ─────────────────────────────────────────────────────────
-// Customer's own bookings, split into upcoming and past by the booking's actual start moment.
+// Customer's own bookings, split into upcoming and past. Non-terminal bookings
+// (pending/confirmed/completed) are bucketed by their actual start moment; terminal
+// bookings (cancelled/no_show) always belong to "past" regardless of appointment date.
 exports.getMy = async (req, res, next) => {
   try {
     const status = req.query.status === 'past' ? 'past' : 'upcoming';
@@ -215,19 +217,27 @@ exports.getMy = async (req, res, next) => {
     const today   = nowIraq.toISOString().slice(0, 10);
     const nowTime = nowIraq.toISOString().slice(11, 19);
 
+    // Terminal statuses live in "past" the moment they're reached — a cancelled
+    // (or no_show) booking must not linger in "upcoming" just because its
+    // appointment date is still in the future.
+    const TERMINAL = '(cancelled,no_show)';
+
     let query = supabaseAdmin
       .from('bookings')
       .select(MY_BOOKING_SELECT)
       .eq('customer_id', req.user.id);
 
     if (status === 'past') {
+      // past = terminal status (any date) OR the appointment moment has already passed
       query = query
         .is('hidden_by_customer_at', null)
-        .or(`booking_date.lt.${today},and(booking_date.eq.${today},start_time.lt.${nowTime})`)
+        .or(`status.in.${TERMINAL},booking_date.lt.${today},and(booking_date.eq.${today},start_time.lt.${nowTime})`)
         .order('booking_date', { ascending: false })
         .order('start_time', { ascending: false });
     } else {
+      // upcoming = appointment moment is still ahead AND the booking is not terminal
       query = query
+        .not('status', 'in', TERMINAL)
         .or(`booking_date.gt.${today},and(booking_date.eq.${today},start_time.gte.${nowTime})`)
         .order('booking_date', { ascending: true })
         .order('start_time', { ascending: true });
