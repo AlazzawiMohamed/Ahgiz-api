@@ -7,26 +7,28 @@ const { normalizeIraqiPhone } = require('../utils/phone');
 // and this transport can never be selected in production (see the guard in utils/config.js).
 const { sendMessage: sendTelegram } = require('./telegram.service');
 
-// الرمز الثابت في وضع التطوير. ليس سرّاً: تطبيق التطوير يعبّئه من ثابت في البناء،
-// والخادم لا يُرجعه في أي استجابة ولا يمرّ عبر الشبكة إطلاقاً.
+// the fixed code in dev mode. Not a secret: the dev app fills it from a build-time constant,
+// and the server never returns it in any response nor sends it over the network at all.
 const DEV_OTP = '000000';
 
-// لا نسجّل رقماً كاملاً أبداً — ولا نسجّل الرمز إطلاقاً في أي بيئة.
+// we never log a full number — and never log the code in any environment.
 const maskPhone = (phone) => (phone ? `${String(phone).slice(0, 7)}****` : 'unknown');
 
 const invalidPhoneError = () =>
+  // TODO(i18n): replace with i18n key
   Object.assign(new Error('رقم الهاتف العراقي غير صحيح'), { statusCode: 400 });
 
-// خطأ نقل مُعقَّم: لا يحمل الرمز ولا التوكن ولا كائن axios الأصلي
-// (err.config.data يحوي نصّ الرسالة ومعه الرمز + ULTRAMSG_TOKEN — يجب ألّا يخرج من هذا الملف).
+// sanitized transport error: carries neither the code nor the token nor the original axios object
+// (err.config.data holds the message text with the code + ULTRAMSG_TOKEN — must not leave this file).
 const transportError = () =>
+  // TODO(i18n): replace with i18n key
   Object.assign(new Error('تعذّر إرسال رمز التحقق حالياً. حاول لاحقاً.'), { statusCode: 503 });
 
-// يولّد الرمز حسب وسيلة النقل: ثابت معروف في التطوير، عشوائي في غير ذلك.
+// generates the code per transport: a known constant in dev, random otherwise.
 const generateOtp = () =>
   whatsappTransport() === 'console' ? DEV_OTP : String(crypto.randomInt(100000, 999999));
 
-// الإرسال الفعلي. أي خطأ — مهما كان مصدره — يخرج من هنا كخطأ مُعقَّم فقط.
+// the actual send. Any error — whatever its source — leaves here as a sanitized error only.
 const postToUltraMsg = async (normalized, message) => {
   const { ULTRAMSG_INSTANCE_ID, ULTRAMSG_TOKEN } = process.env;
 
@@ -38,7 +40,7 @@ const postToUltraMsg = async (normalized, message) => {
     );
 
     if (!data?.sent) {
-      // حقول قياسية فقط — لا نسجّل الاستجابة الخام: قد تعيد نصّ الرسالة ومعه الرمز.
+      // standard fields only — we do not log the raw response: it may return the message text with the code.
       logger.error('WhatsApp send rejected', {
         to: maskPhone(normalized),
         ultramsgError: typeof data?.error === 'string' ? data.error : 'unknown',
@@ -48,7 +50,7 @@ const postToUltraMsg = async (normalized, message) => {
 
     return { success: true, messageId: data.id ?? null };
   } catch (err) {
-    if (err.statusCode === 503) throw err; // خطؤنا المُعقَّم — مرّره كما هو
+    if (err.statusCode === 503) throw err; // our sanitized error — pass it through as is
 
     logger.error('WhatsApp transport failure', {
       to: maskPhone(normalized),
@@ -59,7 +61,7 @@ const postToUltraMsg = async (normalized, message) => {
   }
 };
 
-// إرسال رمز التحقق. لا يُرجع الرمز — ولا أي أثر له — في أي بيئة وعلى أي مسار.
+// send the verification code. Never returns the code — nor any trace of it — in any environment or path.
 const sendWhatsAppOTP = async (phone, otp) => {
   const normalized = normalizeIraqiPhone(phone);
   if (!normalized) throw invalidPhoneError();
@@ -72,8 +74,8 @@ const sendWhatsAppOTP = async (phone, otp) => {
   }
 
   if (transport === 'console') {
-    // لا نطبع الرمز: إنه DEV_OTP الثابت، ومعروف مسبقاً في بناء التطوير.
-    logger.info(`[console] OTP → ${maskPhone(normalized)} — استخدم رمز التطوير الثابت`);
+    // we do not print the code: it is the fixed DEV_OTP, already known in the dev build.
+    logger.info(`[console] OTP → ${maskPhone(normalized)} — use the fixed dev code`);
     return { success: true, transport: 'console' };
   }
 
@@ -93,6 +95,7 @@ const sendWhatsAppOTP = async (phone, otp) => {
   }
 
   const message =
+    // TODO(i18n): replace with i18n key
     `🔐 كودك لتطبيق احجز:\n\n` +
     `*${otp}*\n\n` +
     `⏱️ صالح لمدة ${process.env.OTP_EXPIRY_MINUTES || 5} دقائق\n` +
@@ -136,9 +139,9 @@ const sendWhatsAppMessage = async (phone, message) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const RETRY_ATTEMPTS = parseInt(process.env.WHATSAPP_RETRY_ATTEMPTS || '3', 10);
 
-// إرسال مع إعادة محاولة (يستخدمه Bull queue processor). لا يُعيد المحاولة على رقم خاطئ.
+// send with retry (used by the Bull queue processor). Does not retry on an invalid number.
 const sendWhatsAppWithRetry = async (phone, message, userId = null, attempts = RETRY_ATTEMPTS) => {
-  if (whatsappTransport() === 'disabled') throw transportError(); // لا فائدة من الإعادة
+  if (whatsappTransport() === 'disabled') throw transportError(); // no point retrying
 
   let lastErr;
   for (let i = 1; i <= attempts; i++) {
@@ -146,7 +149,7 @@ const sendWhatsAppWithRetry = async (phone, message, userId = null, attempts = R
       return await sendWhatsAppMessage(phone, message);
     } catch (err) {
       lastErr = err;
-      if (err.statusCode === 400) throw err; // رقم غير صالح — لا فائدة من الإعادة
+      if (err.statusCode === 400) throw err; // invalid number — no point retrying
       logger.warn(`WhatsApp retry ${i}/${attempts} for ${userId || maskPhone(phone)}: ${err.message}`);
       if (i < attempts) await sleep(1000 * i);
     }

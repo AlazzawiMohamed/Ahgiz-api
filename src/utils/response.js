@@ -6,6 +6,7 @@ const success = (res, data = null, message = 'success', statusCode = 200) => {
   });
 };
 
+// TODO(i18n): replace with i18n key
 const error = (res, message = 'حدث خطأ', statusCode = 500, errors = null) => {
   const body = { status: 'error', message };
   if (errors) body.errors = errors;

@@ -7,11 +7,14 @@ const {
   breakglassLimiter,
 } = require('../middleware/rateLimiter');
 
-// مصادقة الأدمن — عامة (لا تتطلب توكن): الدخول بالبريد + كلمة المرور ثم 2FA
+// Admin authentication — public (no token required): email + password, then 2FA.
+// Both are rate limited per IP: these are the only unauthenticated doors into the admin
+// panel, and neither controller keeps a per-account attempt counter.
 router.post('/login',      adminLoginLimiter,  adminAuthController.login);
 router.post('/verify-2fa', adminVerifyLimiter, adminAuthController.verify2fa);
 
-// توثيق بريد الأدمن — مرّة واحدة، محميّ بتوكن عالي العشوائية أُرسل للصندوق نفسه.
+// Admin email verification — single use, protected by a high-entropy token that was
+// sent to the mailbox itself.
 router.get('/verify-email', adminAuthController.verifyEmail);
 
 // ─── Layer 3: break-glass code ───────────────────────────────────────────────

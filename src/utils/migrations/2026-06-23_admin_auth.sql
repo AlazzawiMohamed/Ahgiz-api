@@ -1,12 +1,12 @@
--- Sprint 5 — مصادقة الأدمن + إعدادات المنصة الأساسية
--- آمنة وإضافية فقط (idempotent). طبّقها على قاعدة بيانات Supabase.
+-- Sprint 5 — admin authentication + core platform settings
+-- safe and additive only (idempotent). Apply it to the Supabase database.
 
--- ── كلمة مرور الأدمن (الدخول بالبريد + كلمة المرور ثم 2FA عبر واتساب) ──────────
--- التطبيق يعتمد phone-OTP، فلا يوجد عمود كلمة مرور — نضيفه للأدمن فقط.
+-- ── admin password (login with email + password then 2FA via WhatsApp) ──────────
+-- the app relies on phone-OTP, so there is no password column — we add it for admins only.
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
--- ── إعدادات المنصة المعروضة في A12 (لا تُنشأ إن كانت موجودة) ───────────────────
+-- ── platform settings shown in A12 (not created if they already exist) ───────────────────
 INSERT INTO platform_settings (key, value, description) VALUES
   ('booking_hold_minutes',          '8',       'مدة حجز الموعد المؤقت بالدقائق قبل انتهاء الصلاحية'),
   ('calendar_pending_color',        '#F97316', 'لون الحجوزات المعلّقة في التقويم (ثابت — لا يُعدَّل من الواجهة)'),
@@ -14,16 +14,16 @@ INSERT INTO platform_settings (key, value, description) VALUES
   ('calendar_poll_interval_seconds','300',     'فاصل التحديث الاحتياطي لتقويم صاحب العمل بالثواني')
 ON CONFLICT (key) DO NOTHING;
 
--- ── (اختياري) فهرس على بريد الأدمن لتسريع الدخول ──────────────────────────────
+-- ── (optional) index on admin email to speed up login ──────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_users_email_admin
   ON users (email) WHERE role = 'admin';
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- تهيئة كلمة مرور أدمن لمرة واحدة (شغّلها يدوياً من جذر ahgiz-api، استبدل القيم):
+-- one-time admin password setup (run it manually from the ahgiz-api root, replace the values):
 --
 --   node -e "const b=require('bcrypt');const {supabaseAdmin}=require('./src/utils/supabase');\
 --   b.hash(process.argv[1],10).then(h=>supabaseAdmin.from('users')\
 --   .update({password_hash:h}).eq('email',process.argv[2]).eq('role','admin')\
---   .then(({error})=>{console.log(error||'تم تعيين كلمة مرور الأدمن');process.exit(0)}))" 'MyStrongPass!' 'admin@ahgiz.iq'
+--   .then(({error})=>{console.log(error||'admin password set');process.exit(0)}))" 'MyStrongPass!' 'admin@ahgiz.iq'
 --
--- (يتطلب أن يكون المستخدم موجوداً بدور admin مع بريد وهاتف عراقي صالح لاستلام 2FA)
+-- (requires the user to exist with role admin and a valid email and Iraqi phone to receive 2FA)

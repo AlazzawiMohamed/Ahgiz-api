@@ -10,6 +10,7 @@ exports.search = async (req, res, next) => {
     } = req.query;
 
     if (!q && !province && !category) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'يجب توفير معيار بحث واحد على الأقل: q, province, أو category', 400);
     }
 
@@ -40,6 +41,7 @@ exports.search = async (req, res, next) => {
         .select('id')
         .eq('slug', category)
         .single();
+      // TODO(i18n): replace with i18n key
       if (!cat) return error(res, 'الفئة غير موجودة', 404);
       query = query.eq('category_id', cat.id);
     }

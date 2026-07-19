@@ -37,9 +37,11 @@ const getClientMeta = (req) => ({
 exports.sendOtp = async (req, res, next) => {
   try {
     const { phone } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!phone) return error(res, 'رقم الهاتف مطلوب', 400);
 
     const normalized = normalizeIraqiPhone(phone);
+    // TODO(i18n): replace with i18n key
     if (!normalized) return error(res, 'رقم الهاتف العراقي غير صحيح (مثال: 07701234567)', 400);
 
     // Check blocked_until
@@ -55,6 +57,7 @@ exports.sendOtp = async (req, res, next) => {
 
     if (blocked) {
       const waitSeconds = Math.ceil((new Date(blocked.blocked_until) - Date.now()) / 1000);
+      // TODO(i18n): replace with i18n key
       return error(res, `محظور مؤقتاً. انتظر ${waitSeconds} ثانية`, 429);
     }
 
@@ -75,6 +78,7 @@ exports.sendOtp = async (req, res, next) => {
     if (recent) {
       const nextAt = new Date(new Date(recent.sent_at).getTime() + rateMins * 60 * 1000);
       const waitSecs = Math.ceil((nextAt - Date.now()) / 1000);
+      // TODO(i18n): replace with i18n key
       return error(res, `انتظر ${waitSecs} ثانية قبل إعادة الإرسال`, 429);
     }
 
@@ -117,8 +121,8 @@ exports.sendOtp = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
-    // الصفّ أُدرج قبل الإرسال. لو فشل الإرسال وتُرك الصفّ 'pending' فإن حارس إعادة
-    // الإرسال أدناه سيقول للمستخدم "انتظر N ثانية" رغم أنه لم يستلم شيئاً — لذا نُبطله.
+    // the row was inserted before sending. If sending fails and the row is left 'pending', the resend
+    // guard below would tell the user "wait N seconds" even though they received nothing — so we void it.
     try {
       await sendWhatsAppOTP(normalized, otp);
     } catch (waErr) {
@@ -135,6 +139,7 @@ exports.sendOtp = async (req, res, next) => {
       phone: normalized,
       expiresIn: parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60,
       isNewUser: !existingUser,
+    // TODO(i18n): replace with i18n key
     }, 'تم إرسال كود التحقق عبر واتساب');
   } catch (err) {
     next(err);
@@ -146,9 +151,11 @@ exports.sendOtp = async (req, res, next) => {
 exports.verifyOtp = async (req, res, next) => {
   try {
     const { phone, otp, full_name } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!phone || !otp) return error(res, 'رقم الهاتف والكود مطلوبان', 400);
 
     const normalized = normalizeIraqiPhone(phone);
+    // TODO(i18n): replace with i18n key
     if (!normalized) return error(res, 'رقم الهاتف غير صحيح', 400);
 
     // Load latest pending, non-expired session
@@ -163,6 +170,7 @@ exports.verifyOtp = async (req, res, next) => {
       .single();
 
     if (!session) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'الكود منتهي أو غير موجود — أعد طلب كود جديد', 400);
     }
 
@@ -175,6 +183,7 @@ exports.verifyOtp = async (req, res, next) => {
         .from('whatsapp_otp_sessions')
         .update({ status: 'failed', blocked_until: blockedUntil })
         .eq('id', session.id);
+      // TODO(i18n): replace with i18n key
       return error(res, 'تجاوزت عدد المحاولات. محظور لمدة 15 دقيقة', 429);
     }
 
@@ -187,6 +196,7 @@ exports.verifyOtp = async (req, res, next) => {
         .from('whatsapp_otp_sessions')
         .update({ attempts: newAttempts })
         .eq('id', session.id);
+      // TODO(i18n): replace with i18n key
       return error(res, `كود خاطئ — متبقي ${remaining} محاولة`, 401);
     }
 
@@ -218,6 +228,7 @@ exports.verifyOtp = async (req, res, next) => {
       const inGrace = pendingDeletion && new Date(pendingDeletion.scheduled_at) > new Date();
       if (!inGrace) {
         // Grace window passed (account effectively deleted) — don't silently resurrect.
+        // TODO(i18n): replace with i18n key
         return error(res, 'تم حذف هذا الحساب', 403);
       }
 
@@ -263,7 +274,9 @@ exports.verifyOtp = async (req, res, next) => {
       user = created;
     }
 
+    // TODO(i18n): replace with i18n key
     if (!user.is_active) return error(res, 'الحساب معطل. تواصل مع الدعم', 403);
+    // TODO(i18n): replace with i18n key
     if (user.is_banned) return error(res, 'الحساب محظور. تواصل مع الدعم', 403);
 
     // Update last_seen_at
@@ -300,6 +313,7 @@ exports.verifyOtp = async (req, res, next) => {
       accessToken,
       refreshToken: rawRefresh,
       isNew,
+    // TODO(i18n): replace with i18n key
     }, isNew ? 'تم إنشاء حسابك بنجاح' : 'تم تسجيل الدخول بنجاح');
   } catch (err) {
     next(err);
@@ -311,6 +325,7 @@ exports.verifyOtp = async (req, res, next) => {
 exports.refresh = async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!refreshToken) return error(res, 'refreshToken مطلوب', 400);
 
     const hash = hashToken(refreshToken);
@@ -321,9 +336,12 @@ exports.refresh = async (req, res, next) => {
       .eq('token_hash', hash)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!stored) return error(res, 'refresh token غير صالح', 401);
+    // TODO(i18n): replace with i18n key
     if (stored.revoked) return error(res, 'refresh token ملغى — سجل دخولك مجدداً', 401);
     if (new Date(stored.expires_at) < new Date()) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'refresh token منتهي الصلاحية', 401);
     }
 
@@ -335,6 +353,7 @@ exports.refresh = async (req, res, next) => {
       .single();
 
     if (!user || !user.is_active || user.is_banned) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'الحساب غير نشط', 401);
     }
 
@@ -363,6 +382,7 @@ exports.refresh = async (req, res, next) => {
 
     const accessToken = signAccess({ id: user.id, phone: user.phone, role: user.role });
 
+    // TODO(i18n): replace with i18n key
     return success(res, { accessToken, refreshToken: rawRefresh }, 'تم تجديد الجلسة');
   } catch (err) {
     next(err);
@@ -385,6 +405,7 @@ exports.logout = async (req, res, next) => {
     }
 
     logger.info(`Logout: user=${req.user.id}`);
+    // TODO(i18n): replace with i18n key
     return success(res, null, 'تم تسجيل الخروج بنجاح');
   } catch (err) {
     next(err);
@@ -402,6 +423,7 @@ exports.getMe = async (req, res, next) => {
       .is('deleted_at', null)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (dbErr || !user) return error(res, 'المستخدم غير موجود', 404);
     return success(res, user);
   } catch (err) {

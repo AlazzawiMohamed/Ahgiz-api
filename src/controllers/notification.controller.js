@@ -22,17 +22,23 @@ exports.send = async (req, res, next) => {
       booking_id, scheduled_at,
     } = req.body;
 
+    // TODO(i18n): replace with i18n key
     if (!user_id)  return error(res, 'user_id مطلوب', 400);
+    // TODO(i18n): replace with i18n key
     if (!type)     return error(res, 'type مطلوب', 400);
+    // TODO(i18n): replace with i18n key
     if (!message)  return error(res, 'message مطلوب', 400);
 
     if (!VALID_TYPES.includes(type)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `نوع الإشعار غير صالح: ${type}`, 400);
     }
     if (!VALID_CHANNELS.includes(channel)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `channel غير صالح. القيم المقبولة: ${VALID_CHANNELS.join(', ')}`, 400);
     }
     if (!VALID_PRIORITIES.includes(priority)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `priority غير صالح. القيم المقبولة: ${VALID_PRIORITIES.join(', ')}`, 400);
     }
 
@@ -44,6 +50,7 @@ exports.send = async (req, res, next) => {
       .is('deleted_at', null)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!targetUser) return error(res, 'المستخدم المستهدف غير موجود', 404);
 
     const { data: notif, error: dbErr } = await supabaseAdmin
@@ -62,6 +69,7 @@ exports.send = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, notif, 'تم جدولة الإشعار بنجاح', 201);
   } catch (err) {
     next(err);
@@ -110,6 +118,7 @@ exports.readAll = async (req, res, next) => {
       .in('channel', ['in_app', 'both']);
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, { updated: count ?? 0 }, 'تم تحديد جميع الإشعارات كمقروءة');
   } catch (err) {
     next(err);
@@ -125,10 +134,13 @@ exports.readOne = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!notif) return error(res, 'الإشعار غير موجود', 404);
+    // TODO(i18n): replace with i18n key
     if (notif.user_id !== req.user.id) return error(res, 'ليس لديك صلاحية', 403);
 
     if (notif.read_at) {
+      // TODO(i18n): replace with i18n key
       return success(res, { id: notif.id, read_at: notif.read_at }, 'الإشعار مقروء مسبقاً');
     }
 
@@ -140,6 +152,7 @@ exports.readOne = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, updated, 'تم تحديد الإشعار كمقروء');
   } catch (err) {
     next(err);
@@ -156,6 +169,7 @@ exports.deleteAll = async (req, res, next) => {
       .in('channel', ['in_app', 'both']);
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, null, 'تم حذف جميع الإشعارات');
   } catch (err) {
     next(err);
@@ -171,7 +185,9 @@ exports.deleteOne = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!notif) return error(res, 'الإشعار غير موجود', 404);
+    // TODO(i18n): replace with i18n key
     if (notif.user_id !== req.user.id) return error(res, 'ليس لديك صلاحية', 403);
 
     const { error: dbErr } = await supabaseAdmin
@@ -180,6 +196,7 @@ exports.deleteOne = async (req, res, next) => {
       .eq('id', req.params.id);
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, null, 'تم حذف الإشعار');
   } catch (err) {
     next(err);

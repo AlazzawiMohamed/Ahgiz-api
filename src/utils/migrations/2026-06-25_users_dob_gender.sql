@@ -7,5 +7,5 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS gender        TEXT
     CHECK (gender IN ('male', 'female', 'prefer_not_to_say'));
 
-COMMENT ON COLUMN users.date_of_birth IS 'تاريخ ميلاد المستخدم (لمكافأة عيد الميلاد)';
-COMMENT ON COLUMN users.gender IS 'جنس المستخدم: male | female | prefer_not_to_say';
+COMMENT ON COLUMN users.date_of_birth IS 'user''s date of birth (for the birthday reward)';
+COMMENT ON COLUMN users.gender IS 'user''s gender: male | female | prefer_not_to_say';

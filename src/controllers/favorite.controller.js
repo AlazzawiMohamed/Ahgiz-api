@@ -14,6 +14,7 @@ exports.add = async (req, res, next) => {
       .eq('is_active', true)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!biz) return error(res, 'المحل غير موجود أو غير نشط', 404);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -24,11 +25,13 @@ exports.add = async (req, res, next) => {
 
     if (dbErr) {
       if (dbErr.code === '23505') {
+        // TODO(i18n): replace with i18n key
         return error(res, 'المحل موجود بالفعل في المفضلة', 409);
       }
       throw dbErr;
     }
 
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تمت إضافة المحل إلى المفضلة', 201);
   } catch (err) {
     next(err);
@@ -47,6 +50,7 @@ exports.remove = async (req, res, next) => {
       .eq('business_id', business_id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!existing) return error(res, 'المحل غير موجود في المفضلة', 404);
 
     const { error: dbErr } = await supabaseAdmin
@@ -56,6 +60,7 @@ exports.remove = async (req, res, next) => {
       .eq('business_id', business_id);
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, null, 'تمت إزالة المحل من المفضلة');
   } catch (err) {
     next(err);

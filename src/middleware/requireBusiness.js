@@ -23,6 +23,7 @@ const requireBusiness = async (req, res, next) => {
 
     const { data: biz } = await query.maybeSingle();
 
+    // TODO(i18n): replace with i18n key
     if (!biz) return error(res, 'لا يوجد محل مرتبط بحسابك', 404);
 
     req.business = biz;

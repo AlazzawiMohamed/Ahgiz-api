@@ -13,10 +13,10 @@ const fs = require('fs');
 
 if (!fs.existsSync('logs')) fs.mkdirSync('logs');
 
-// تحقّق من الإعداد قبل أي شيء آخر — إعداد إنتاج خاطئ يجب ألّا يقلع أصلاً.
+// Validate the config before anything else — a bad production config must not boot at all.
 require('./utils/config').validateEnv({ service: 'api' });
 
-// تهيئة Sentry مبكراً (no-op بدون SENTRY_DSN أو بدون الحزمة)
+// Initialize Sentry early (a no-op without SENTRY_DSN, or without the package installed)
 sentry.init();
 
 const app = express();
@@ -79,11 +79,11 @@ app.use('/telegram', telegramRoutes);
 app.use('/api/v1', routes);
 
 app.use(notFound);
-app.use(sentry.captureErrors()); // التقاط الأخطاء في Sentry قبل المعالج العام
+app.use(sentry.captureErrors()); // capture errors in Sentry before the global handler
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  logger.info(`احجز API يعمل على المنفذ ${PORT} — البيئة: ${process.env.NODE_ENV}`);
+  logger.info(`Ahgiz API running on port ${PORT} — environment: ${process.env.NODE_ENV}`);
 
   // Point Telegram at this deployment's webhook. Never throws and is never awaited: the API
   // must come up even if Telegram is unreachable — a bot that cannot be reached is a

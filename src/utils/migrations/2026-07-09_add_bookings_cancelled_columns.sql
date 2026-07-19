@@ -23,9 +23,9 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 
 COMMENT ON COLUMN bookings.cancelled_by IS
-  'من ألغى الحجز (دور): customer / business / admin. system محجوز لإلغاء آلي مستقبلي. NULL = غير مُلغى.';
+  'who cancelled the booking (role): customer / business / admin. system is reserved for future automatic cancellation. NULL = not cancelled.';
 COMMENT ON COLUMN bookings.cancelled_at IS
-  'وقت الإلغاء — يُضبط في cancel_booking_with_fee() وكونترولرات الإلغاء عند نقل الحالة إلى cancelled.';
+  'cancellation time — set in cancel_booking_with_fee() and the cancel controllers when moving the status to cancelled.';
 
 -- Actor-role guard. Values written today: customer / business / admin
 -- (controllers + cancel_booking_with_fee v_who). 'system' allowed for a future

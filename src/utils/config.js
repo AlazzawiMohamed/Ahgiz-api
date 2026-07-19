@@ -1,11 +1,13 @@
 // ahgiz-api/src/utils/config.js
-// تحقّق من متغيّرات البيئة عند الإقلاع — يفشل بصوتٍ عالٍ بدل التدهور الصامت.
-// السبب الجذري للثغرة (2026-07-12): غياب بيانات الاعتماد كان يُفسَّر كـ"وضع تطوير"
-// فيُعاد الرمز في جسم الاستجابة. لا نستنتج البيئة من وجود/غياب سرّ بعد اليوم.
+// Validates the environment variables at boot — fails loudly instead of degrading silently.
+// Root cause of the vulnerability (2026-07-12): missing credentials were being read as
+// "development mode", so the OTP was returned in the response body. We no longer infer the
+// environment from the presence or absence of a secret.
 const logger = require('./logger');
 
-// قيم القوالب الشائعة — وجودها يعني إعداداً ناقصاً، لا إعداداً صحيحاً.
-// (`your_instance_id` / `your_token` كانا فعلياً في الإنتاج ولم يُكتشفا إلا عند أول طلب.)
+// Common placeholder values — their presence means the config is incomplete, not correct.
+// (`your_instance_id` / `your_token` were genuinely live in production, and went unnoticed
+// until the first real request.)
 const PLACEHOLDER_RE = /^(your[_-]?\w*|changeme|change_me|placeholder|todo|dummy|example|x+)$/i;
 
 const isPlaceholder = (value) => {
@@ -13,14 +15,14 @@ const isPlaceholder = (value) => {
   return s === '' || PLACEHOLDER_RE.test(s);
 };
 
-// إشارتان مستقلّتان على أنّنا في نشرٍ حقيقي:
-//  1) NODE_ENV — يضبطه الإنسان، وقد يُخطئ في كتابته أو ينساه.
-//  2) RAILWAY_ENVIRONMENT — تحقنه المنصّة تلقائياً، ولا يستطيع أحد نسيانه.
+// Two independent signals that we are in a real deployment:
+//  1) NODE_ENV — set by a human, who can misspell it or forget it.
+//  2) RAILWAY_ENVIRONMENT — injected by the platform automatically; nobody can forget it.
 const isRailwayDeploy = () => Boolean(process.env.RAILWAY_ENVIRONMENT);
 const isExplicitDev = () =>
   ['development', 'test'].includes(String(process.env.NODE_ENV || '').trim());
 
-// الافتراضي هو المنع: NODE_ENV مفقود أو مكتوب خطأً ⇒ نعامله كإنتاج.
+// The default is to deny: a missing or misspelled NODE_ENV ⇒ we treat it as production.
 const consoleTransportAllowed = () => isExplicitDev() && !isRailwayDeploy();
 
 const TRANSPORTS = ['ultramsg', 'console', 'disabled', 'telegram-dev'];
@@ -31,7 +33,7 @@ const whatsappTransport = () => {
 };
 
 const fatal = (message) => {
-  logger.error(`FATAL CONFIG — الخادم لن يقلع: ${message}`);
+  logger.error(`FATAL CONFIG — the server will not boot: ${message}`);
   process.exit(1);
 };
 
@@ -41,21 +43,21 @@ const validateEnv = ({ service }) => {
   if (service === 'api') required.push('JWT_REFRESH_SECRET');
 
   const bad = required.filter((key) => isPlaceholder(process.env[key]));
-  if (bad.length) fatal(`متغيّرات مطلوبة مفقودة أو قيمتها قالب: ${bad.join(', ')}`);
+  if (bad.length) fatal(`Required variables are missing or still set to a placeholder: ${bad.join(', ')}`);
 
   const transport = whatsappTransport();
 
   if (transport === 'invalid') {
-    fatal(`WHATSAPP_TRANSPORT غير صالح — المسموح: ${TRANSPORTS.join(' | ')}`);
+    fatal(`WHATSAPP_TRANSPORT is invalid — allowed: ${TRANSPORTS.join(' | ')}`);
   }
 
-  // console = تطوير فقط، ويجب أن تتحقّق الإشارتان معاً.
+  // console = development only, and both signals have to agree.
   if (transport === 'console' && !consoleTransportAllowed()) {
     fatal(
-      'WHATSAPP_TRANSPORT=console ممنوع خارج التطوير — ' +
-        `NODE_ENV=${process.env.NODE_ENV || '(غير مضبوط)'}, ` +
-        `RAILWAY_ENVIRONMENT=${isRailwayDeploy() ? 'موجود' : 'غير موجود'}. ` +
-        'استخدم ultramsg ببيانات حقيقية، أو disabled.'
+      'WHATSAPP_TRANSPORT=console is forbidden outside development — ' +
+        `NODE_ENV=${process.env.NODE_ENV || '(unset)'}, ` +
+        `RAILWAY_ENVIRONMENT=${isRailwayDeploy() ? 'present' : 'absent'}. ` +
+        'Use ultramsg with real credentials, or disabled.'
     );
   }
 
@@ -77,23 +79,25 @@ const validateEnv = ({ service }) => {
     );
     if (badCreds.length) {
       fatal(
-        `WHATSAPP_TRANSPORT=ultramsg لكن ${badCreds.join(' و ')} مفقود أو قيمته قالب. ` +
-          'اضبط بيانات UltraMsg الحقيقية، أو اضبط WHATSAPP_TRANSPORT=disabled ' +
-          'للإقرار صراحةً بأنّ إرسال رموز التحقق معطّل.'
+        `WHATSAPP_TRANSPORT=ultramsg, but the following are missing or still placeholders: ${badCreds.join(', ')}. ` +
+          'Set the real UltraMsg credentials, or set WHATSAPP_TRANSPORT=disabled ' +
+          'to acknowledge explicitly that OTP delivery is turned off.'
       );
     }
   }
 
-  // disabled = إقرار صريح بغياب مزوّد واتساب. يقلع الخادم، لكن تسجيل الدخول معطّل عمداً.
+  // disabled = an explicit acknowledgement that there is no WhatsApp provider. The server
+  // still boots, but login is deliberately turned off.
   if (transport === 'disabled') {
     logger.warn(
-      '⚠️  WHATSAPP_TRANSPORT=disabled — لا يوجد مزوّد واتساب. ' +
-        'كل طلبات إرسال رمز التحقق سترجع 503، وتسجيل الدخول معطّل عمداً (fail-closed). ' +
-        'لا يوجد أي تسريب للرمز.'
+      '⚠️  WHATSAPP_TRANSPORT=disabled — no WhatsApp provider. ' +
+        'Every OTP send request will return 503, and login is deliberately disabled (fail-closed). ' +
+        'The code is never leaked.'
     );
   }
 
-  // الطبقة 2 (بريد) اختيارية، لكن غيابها مع تعطّل واتساب يعني: لا قناة لرمز الأدمن إطلاقاً.
+  // Layer 2 (email) is optional, but its absence while WhatsApp is disabled means there is
+  // no channel at all for the admin's code.
   const emailReady = Boolean(process.env.RESEND_API_KEY);
 
   // Layer 3 (break-glass code) — the last way in when both delivery channels are down.
@@ -108,8 +112,9 @@ const validateEnv = ({ service }) => {
 
   if (transport === 'disabled' && !emailReady && !breakglassReady) {
     logger.warn(
-      '⚠️  لا توجد أي قناة لتسليم رمز الأدمن: واتساب معطّل و RESEND_API_KEY غير مضبوط. ' +
-        'دخول الأدمن غير ممكن حتى تُبنى الطبقة 3 (رمز الطوارئ).'
+      '⚠️  No admin login channel at all: WhatsApp is disabled, RESEND_API_KEY is unset, ' +
+        'and the break-glass code is not configured (ADMIN_BREAKGLASS_HASH + ADMIN_BREAKGLASS_EMAIL). ' +
+        'Admin login is currently impossible.'
     );
   }
 

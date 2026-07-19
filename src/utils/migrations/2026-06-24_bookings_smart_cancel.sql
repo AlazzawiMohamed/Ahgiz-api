@@ -10,8 +10,8 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS is_reviewed             BOOLEAN DEFAULT FALSE;
 
 COMMENT ON COLUMN bookings.free_cancellation_until IS
-  'قبل هذا الوقت يمكن للزبون الإلغاء مجاناً (NULL = تُطبّق قاعدة الـ24 ساعة)';
+  'before this time the customer can cancel for free (NULL = the 24-hour rule applies)';
 COMMENT ON COLUMN bookings.cancellation_requested IS
-  'TRUE عند طلب الزبون الإلغاء بعد انتهاء المهلة المجانية (بانتظار موافقة صاحب العمل)';
+  'TRUE when the customer requests cancellation after the free window ends (awaiting business owner approval)';
 COMMENT ON COLUMN bookings.is_reviewed IS
-  'TRUE بعد أن يترك الزبون تقييماً لهذا الحجز';
+  'TRUE after the customer leaves a review for this booking';

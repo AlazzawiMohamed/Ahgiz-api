@@ -1,25 +1,25 @@
--- 2026-07-12 — Layer 2: قناة بريد احتياطية لرمز الأدمن الثنائي (2FA)
+-- 2026-07-12 — Layer 2: fallback email channel for the admin two-factor (2FA) code
 --
--- السياق: بعد إغلاق ثغرة تسريب رمز OTP، صار تسجيل دخول الأدمن fail-closed:
--- إن تعذّر واتساب فلا سبيل للدخول. هذه الطبقة تضيف قناة تسليم ثانية للرمز نفسه
--- (وليست آلية مصادقة ثانية: نفس الرمز، نفس الجلسة المُجزّأة، نفس مسار verify-2fa).
+-- Context: after closing the OTP-code leak vulnerability, admin login became fail-closed:
+-- if WhatsApp fails there is no way in. This layer adds a second delivery channel for the same code
+-- (not a second authentication factor: same code, same hashed session, same verify-2fa path).
 --
--- ⚠️ يُطبَّق يدوياً عبر Supabase SQL Editor (راجع CLAUDE.md).
+-- ⚠️ applied manually via the Supabase SQL Editor (see CLAUDE.md).
 
--- ─── 1) أعمدة توثيق بريد الأدمن ──────────────────────────────────────────────
+-- ─── 1) admin email verification columns ──────────────────────────────────────────────
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS admin_email_verified_at        TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS admin_email_verify_token_hash  TEXT,
   ADD COLUMN IF NOT EXISTS admin_email_verify_expires_at  TIMESTAMPTZ;
 
 COMMENT ON COLUMN public.users.admin_email_verified_at IS
-  'بريد أدمن موثّق (أثبت التحكّم بالصندوق). NULL = غير موثّق ⇒ لا تُستخدم كقناة 2FA أبداً.';
+  'Verified admin email (proved mailbox control). NULL = unverified => never used as a 2FA channel.';
 
--- ─── 2) أي تغيير للبريد يُبطل التوثيق فوراً ──────────────────────────────────
--- السبب الجذري: PUT /users/me (user.controller.js:69) يسمح للمستخدم — بما فيه الأدمن —
--- بتغيير users.email. بدون هذا، مَن يستولي على جلسة أدمن يغيّر البريد فيحوّل رموز
--- الـ2FA إلى صندوقه. الحارس في قاعدة البيانات وليس في التطبيق: كل الكتابات تمرّ عبر
--- service_role، فأي مسار مستقبلي (أو كتابة SQL مباشرة) يبقى مشمولاً.
+-- ─── 2) any email change invalidates verification immediately ──────────────────────────────────
+-- Root cause: PUT /users/me (user.controller.js:69) lets the user — including the admin —
+-- change users.email. Without this, whoever hijacks an admin session changes the email and redirects the
+-- 2FA codes to their own mailbox. The guard is in the database, not the app: all writes go through
+-- service_role, so any future path (or direct SQL write) stays covered.
 CREATE OR REPLACE FUNCTION public.clear_admin_email_verification()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -42,13 +42,13 @@ CREATE TRIGGER trg_clear_admin_email_verification
   FOR EACH ROW
   EXECUTE FUNCTION public.clear_admin_email_verification();
 
--- ─── 3) قاعدة الأمان الإلزامية (CLAUDE.md) — لا استثناء ──────────────────────
--- Supabase يمنح EXECUTE لـ PUBLIC افتراضياً على كل دالة جديدة.
--- (التريغر نفسه يعمل بصلاحيات مالك الجدول، فالسحب هنا لا يعطّله.)
+-- ─── 3) mandatory security rule (CLAUDE.md) — no exception ──────────────────────
+-- Supabase grants EXECUTE to PUBLIC by default on every new function.
+-- (the trigger itself runs with the table owner privileges, so this REVOKE does not disable it.)
 REVOKE EXECUTE ON FUNCTION public.clear_admin_email_verification() FROM PUBLIC, anon, authenticated;
 GRANT  EXECUTE ON FUNCTION public.clear_admin_email_verification() TO service_role;
 
--- ─── تحقّق ───────────────────────────────────────────────────────────────────
+-- ─── verification ───────────────────────────────────────────────────────────────────
 -- SELECT column_name FROM information_schema.columns
 --  WHERE table_schema='public' AND table_name='users' AND column_name LIKE 'admin_email%';
 -- SELECT tgname FROM pg_trigger WHERE tgname = 'trg_clear_admin_email_verification';

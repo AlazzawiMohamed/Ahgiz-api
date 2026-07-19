@@ -29,8 +29,8 @@ const rejectIfLocked = async (res) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// توكن أدمن: نفس نمط توكن الوصول العادي (يمر عبر authenticate دون تعديل)
-// لكن بصلاحية 8 ساعات كما في admin_sessions.
+// Admin token: the same shape as a regular access token (it passes through `authenticate`
+// unchanged), but with an 8-hour lifetime, matching admin_sessions.
 const signAdminAccess = (payload) =>
   jwt.sign({ ...payload, type: 'access' }, process.env.JWT_SECRET, {
     expiresIn:  process.env.JWT_ADMIN_EXPIRY || '8h',
@@ -45,14 +45,14 @@ const signAdminAccess = (payload) =>
 // See the comment there.
 
 // ─── POST /admin/auth/login ───────────────────────────────────────────────────
-// { email, password } → يتحقق من بيانات الأدمن ثم يرسل OTP عبر واتساب
+// { email, password } → verifies the admin's credentials, then sends an OTP over WhatsApp
 exports.login = async (req, res, next) => {
   try {
     if (await rejectIfLocked(res)) return;
 
     const { email, password } = req.body;
     if (!email || !password) {
-      return error(res, 'البريد الإلكتروني وكلمة المرور مطلوبان', 400);
+      return error(res, 'Email and password are required', 400);
     }
 
     const { data: admin } = await supabaseAdmin
@@ -63,22 +63,22 @@ exports.login = async (req, res, next) => {
       .is('deleted_at', null)
       .single();
 
-    // رسالة عامة لمنع تعداد الحسابات
-    const invalid = () => error(res, 'بيانات الدخول غير صحيحة', 401);
+    // Generic message — prevents account enumeration
+    const invalid = () => error(res, 'Invalid credentials', 401);
 
     if (!admin || !admin.password_hash) return invalid();
     if (!admin.is_active || admin.is_banned) {
-      return error(res, 'حساب الأدمن معطل', 403);
+      return error(res, 'Admin account is disabled', 403);
     }
 
     const ok = await bcrypt.compare(String(password), admin.password_hash);
     if (!ok) return invalid();
 
     if (!admin.phone) {
-      return error(res, 'لا يوجد رقم هاتف مسجّل لاستلام رمز التحقق', 400);
+      return error(res, 'No phone number on file to receive the verification code', 400);
     }
 
-    // أبطل أي جلسات 2FA معلّقة سابقة لنفس الأدمن
+    // Invalidate any previously pending 2FA sessions for this same admin
     await supabaseAdmin
       .from('whatsapp_otp_sessions')
       .update({ status: 'expired' })
@@ -108,17 +108,18 @@ exports.login = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
-    // ── تسليم الرمز: واتساب أولاً، ثم البريد كقناة ثانية للرمز نفسه ──────────
-    // البريد قناة تسليم لا آلية مصادقة: نفس الـ otp، نفس الجلسة المُجزّأة أعلاه،
-    // ونفس مسار verify-2fa بلا تغيير. لا يُولَّد رمز ثانٍ ولا تُنشأ جلسة ثانية.
+    // ── Code delivery: WhatsApp first, then email as a second channel for the same code ──
+    // Email is a delivery channel, not an auth mechanism: the same otp, the same hashed
+    // session created above, and the same verify-2fa path unchanged. No second code is
+    // generated and no second session is created.
     let channel = null;
 
     try {
       await sendWhatsAppOTP(admin.phone, otp);
       channel = 'whatsapp';
     } catch (waErr) {
-      // بريد غير موثّق = ليس قناة موثوقة (يمكن تغييره عبر PUT /users/me).
-      // لا نرسل "على أمل" — نتخطّاه إلى الطبقة 3.
+      // An unverified email is not a trusted channel (it can be changed via PUT /users/me).
+      // We do not send on a hope — we skip past it to Layer 3.
       if (admin.admin_email_verified_at && emailConfigured()) {
         try {
           await sendAdminOtpEmail(admin.email, otp);
@@ -135,13 +136,14 @@ exports.login = async (req, res, next) => {
       }
     }
 
-    // فشل كل القنوات ⇒ fail-closed. لا نترك الجلسة 'pending' وإلا تراكمت بلا فائدة.
+    // Every channel failed ⇒ fail-closed. Do not leave the session 'pending', or they just
+    // pile up for nothing.
     if (!channel) {
       await supabaseAdmin
         .from('whatsapp_otp_sessions')
         .update({ status: 'failed' })
         .eq('id', session.id);
-      throw Object.assign(new Error('تعذّر إرسال رمز التحقق عبر أي قناة. راجع المسؤول.'), {
+      throw Object.assign(new Error('Could not deliver the verification code over any channel. Contact the administrator.'), {
         statusCode: 503,
       });
     }
@@ -152,23 +154,23 @@ exports.login = async (req, res, next) => {
       requires_2fa: true,
       challenge:    session.id,
       expiresIn:    parseInt(process.env.OTP_EXPIRY_MINUTES || '5') * 60,
-      channel,   // أين وصل الرمز — ليس سرّاً، وتحتاجه الواجهة لعرض الرسالة الصحيحة
+      channel,   // where the code landed — not a secret, and the frontend needs it to show the right message
     }, channel === 'email'
-        ? 'تعذّر واتساب — أُرسل رمز التحقق إلى بريدك'
-        : 'تم إرسال رمز التحقق عبر واتساب');
+        ? 'WhatsApp unavailable — the verification code was sent to your email'
+        : 'Verification code sent over WhatsApp');
   } catch (err) {
     next(err);
   }
 };
 
 // ─── POST /admin/auth/verify-2fa ──────────────────────────────────────────────
-// { challenge, otp } → يتحقق من OTP، ينشئ جلسة أدمن ويصدر توكن أدمن
+// { challenge, otp } → verifies the OTP, creates an admin session and issues an admin token
 exports.verify2fa = async (req, res, next) => {
   try {
     if (await rejectIfLocked(res)) return;
 
     const { challenge, otp } = req.body;
-    if (!challenge || !otp) return error(res, 'المعرّف والرمز مطلوبان', 400);
+    if (!challenge || !otp) return error(res, 'Challenge and code are required', 400);
 
     const { data: session } = await supabaseAdmin
       .from('whatsapp_otp_sessions')
@@ -180,7 +182,7 @@ exports.verify2fa = async (req, res, next) => {
       .single();
 
     if (!session) {
-      return error(res, 'الرمز منتهي أو غير موجود — أعد تسجيل الدخول', 400);
+      return error(res, 'Code expired or not found — sign in again', 400);
     }
 
     const maxAttempts = session.max_attempts || parseInt(process.env.OTP_MAX_ATTEMPTS || '3');
@@ -190,7 +192,7 @@ exports.verify2fa = async (req, res, next) => {
         .from('whatsapp_otp_sessions')
         .update({ status: 'failed' })
         .eq('id', session.id);
-      return error(res, 'تجاوزت عدد المحاولات — أعد تسجيل الدخول', 429);
+      return error(res, 'Too many attempts — sign in again', 429);
     }
 
     const valid = await bcrypt.compare(String(otp), session.otp_code);
@@ -200,7 +202,7 @@ exports.verify2fa = async (req, res, next) => {
         .from('whatsapp_otp_sessions')
         .update({ attempts: session.attempts + 1 })
         .eq('id', session.id);
-      return error(res, `رمز خاطئ — متبقي ${Math.max(remaining, 0)} محاولة`, 401);
+      return error(res, `Invalid code — ${Math.max(remaining, 0)} attempt(s) remaining`, 401);
     }
 
     await supabaseAdmin
@@ -216,7 +218,7 @@ exports.verify2fa = async (req, res, next) => {
       .single();
 
     if (!admin || !admin.is_active || admin.is_banned) {
-      return error(res, 'حساب الأدمن غير متاح', 403);
+      return error(res, 'Admin account unavailable', 403);
     }
 
     const meta = clientMeta(req);
@@ -224,7 +226,7 @@ exports.verify2fa = async (req, res, next) => {
       id: admin.id, role: 'admin', phone: null, auth_method: 'password_2fa',
     });
 
-    // سجل جلسة الأدمن (تنتهي تلقائياً بعد 8 ساعات حسب الجدول)
+    // Record the admin session (expires automatically after 8 hours, per the table)
     const { data: adminSession } = await supabaseAdmin
       .from('admin_sessions')
       .insert({
@@ -257,21 +259,22 @@ exports.verify2fa = async (req, res, next) => {
     return success(res, {
       admin_token,
       admin: { id: admin.id, full_name: admin.full_name, email: admin.email },
-    }, 'تم تسجيل الدخول بنجاح');
+    }, 'Signed in successfully');
   } catch (err) {
     next(err);
   }
 };
 
 // ─── GET /admin/auth/verify-email?token=… ─────────────────────────────────────
-// يوثّق بريد الأدمن مرّة واحدة. عام عمداً: امتلاك التوكن (32 بايت عشوائية أُرسلت
-// إلى الصندوق فقط) هو نفسه إثبات التحكّم بالصندوق — وهو بالضبط ما نوثّقه.
-// التوكن يُطلب عبر سكربت المالك (scripts/send-admin-email-verification.js) لأن
-// الأدمن لا يستطيع تسجيل الدخول أصلاً قبل وجود قناة تسليم.
+// Verifies an admin's email exactly once. Public on purpose: holding the token (32 random
+// bytes sent to that inbox and nowhere else) IS proof of control over the inbox — which is
+// precisely what we are verifying. The token is issued through the owner's script
+// (scripts/send-admin-email-verification.js), because an admin cannot sign in at all before
+// a delivery channel exists.
 exports.verifyEmail = async (req, res, next) => {
   try {
     const { token } = req.query;
-    if (!token) return error(res, 'التوكن مطلوب', 400);
+    if (!token) return error(res, 'Token is required', 400);
 
     const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
 
@@ -283,12 +286,12 @@ exports.verifyEmail = async (req, res, next) => {
       .is('deleted_at', null)
       .maybeSingle();
 
-    // رسالة واحدة عامة للتوكن الخاطئ والمنتهي — لا نكشف أيّهما.
+    // One generic message for both a wrong and an expired token — we do not reveal which.
     if (!admin || new Date(admin.admin_email_verify_expires_at) < new Date()) {
-      return error(res, 'رابط التوثيق غير صالح أو منتهي', 400);
+      return error(res, 'Verification link is invalid or expired', 400);
     }
 
-    // استخدام واحد: نمسح التوكن مع ختم التوثيق في نفس الكتابة.
+    // Single use: we clear the token and stamp the verification in the same write.
     const { error: dbErr } = await supabaseAdmin
       .from('users')
       .update({
@@ -297,12 +300,12 @@ exports.verifyEmail = async (req, res, next) => {
         admin_email_verify_expires_at: null,
       })
       .eq('id', admin.id)
-      .eq('admin_email_verify_token_hash', tokenHash); // حارس تزامن: أول استخدام فقط ينجح
+      .eq('admin_email_verify_token_hash', tokenHash); // concurrency guard: only the first use succeeds
 
     if (dbErr) throw dbErr;
 
     logger.info(`Admin email verified → ${admin.email}`);
-    return success(res, { verified: true }, 'تم توثيق البريد. صار قناة احتياطية لرمز الدخول.');
+    return success(res, { verified: true }, 'Email verified. It is now a fallback channel for the login code.');
   } catch (err) {
     next(err);
   }

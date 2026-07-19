@@ -7,4 +7,4 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS selected_addons JSONB DEFAULT '[]'::JSONB;
 
 COMMENT ON COLUMN bookings.selected_addons IS
-  'Add-ons المختارة عند الحجز (snapshot). [{"addon_id","name","price","duration_mins"}]';
+  'Add-ons selected at booking time (snapshot). [{"addon_id","name","price","duration_mins"}]';

@@ -2,7 +2,7 @@ const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
 const { clientIp } = require('../utils/request');
 
-// ─── سجل تدقيق الأدمن (يُستدعى بعد كل عملية كتابة) ─────────────────────────────
+// ─── Admin audit log (called after every write operation) ─────────────────────
 // ip_address used to be `req.ip || x-forwarded-for` — wrong on both sides: req.ip is
 // always truthy so the second branch was dead code, and without trust proxy req.ip was
 // Railway's edge IP. Every row in this log up to now carries the proxy's IP, not the
@@ -24,7 +24,7 @@ const logAdmin = async (req, { action, target_type = null, target_id = null, bef
       auth_method: req.user?.auth_method || null,
     });
   } catch (e) {
-    // لا نُفشل العملية بسبب فشل التسجيل
+    // do not fail the operation if logging fails
   }
 };
 
@@ -159,8 +159,10 @@ exports.approveBusiness = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!biz) return error(res, 'المحل غير موجود', 404);
     if (biz.approval_status === 'approved') {
+      // TODO(i18n): replace with i18n key
       return error(res, 'المحل موافق عليه مسبقاً', 400);
     }
 
@@ -181,6 +183,7 @@ exports.approveBusiness = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
     await logAdmin(req, { action: 'approve_business', target_type: 'business', target_id: biz.id, before: { approval_status: biz.approval_status }, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, `تمت الموافقة على المحل: ${biz.name}`);
   } catch (err) {
     next(err);
@@ -191,6 +194,7 @@ exports.approveBusiness = async (req, res, next) => {
 exports.suspendBusiness = async (req, res, next) => {
   try {
     const { reason } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!reason) return error(res, 'سبب التعليق (reason) مطلوب', 400);
 
     const { data: biz } = await supabaseAdmin
@@ -199,8 +203,10 @@ exports.suspendBusiness = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!biz) return error(res, 'المحل غير موجود', 404);
     if (biz.approval_status === 'suspended') {
+      // TODO(i18n): replace with i18n key
       return error(res, 'المحل معلق مسبقاً', 400);
     }
 
@@ -218,6 +224,7 @@ exports.suspendBusiness = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
     await logAdmin(req, { action: 'suspend_business', target_type: 'business', target_id: biz.id, before: { approval_status: biz.approval_status }, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, `تم تعليق المحل: ${biz.name}`);
   } catch (err) {
     next(err);
@@ -234,20 +241,21 @@ exports.getDashboardCharts = async (req, res, next) => {
       supabaseAdmin.from('businesses').select('province').eq('is_active', true),
     ]);
 
-    // حجوزات آخر 30 يوم
+    // bookings in the last 30 days
     const byDate = {};
     (bookings || []).forEach((b) => { byDate[b.booking_date] = (byDate[b.booking_date] || 0) + 1; });
     const bookings_30d = Object.entries(byDate)
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // توزيع طرق الدفع
+    // payment method distribution
     const byPayment = {};
     (bookings || []).forEach((b) => { const k = b.payment_method || 'cash'; byPayment[k] = (byPayment[k] || 0) + 1; });
     const payment_methods = Object.entries(byPayment).map(([method, count]) => ({ method, count }));
 
-    // توزيع المحلات بالمحافظة
+    // business distribution by province
     const byProvince = {};
+    // TODO(i18n): replace with i18n key
     (biz || []).forEach((b) => { const k = b.province || 'غير محدد'; byProvince[k] = (byProvince[k] || 0) + 1; });
     const businesses_by_province = Object.entries(byProvince).map(([province, count]) => ({ province, count }));
 
@@ -258,11 +266,12 @@ exports.getDashboardCharts = async (req, res, next) => {
 };
 
 // ─── DELETE /admin/businesses/:id ─────────────────────────────────────────────
-// لا يوجد عمود deleted_at على businesses → حذف ناعم = تعطيل + تجميد
+// no deleted_at column on businesses -> soft delete = deactivate + freeze
 exports.deleteBusiness = async (req, res, next) => {
   try {
     const { data: biz } = await supabaseAdmin
       .from('businesses').select('id, name, is_active').eq('id', req.params.id).single();
+    // TODO(i18n): replace with i18n key
     if (!biz) return error(res, 'المحل غير موجود', 404);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -271,6 +280,7 @@ exports.deleteBusiness = async (req, res, next) => {
         is_active:       false,
         is_frozen:       true,
         approval_status: 'suspended',
+        // TODO(i18n): replace with i18n key
         freeze_reason:   req.body?.reason || 'حُذف بواسطة الأدمن',
         updated_at:      new Date().toISOString(),
       })
@@ -280,6 +290,7 @@ exports.deleteBusiness = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     await logAdmin(req, { action: 'delete_business', target_type: 'business', target_id: biz.id, before: biz, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, `تم حذف المحل: ${biz.name}`);
   } catch (err) {
     next(err);
@@ -290,11 +301,14 @@ exports.deleteBusiness = async (req, res, next) => {
 exports.suspendUser = async (req, res, next) => {
   try {
     const { reason } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!reason) return error(res, 'سبب الحظر (reason) مطلوب', 400);
 
     const { data: user } = await supabaseAdmin
       .from('users').select('id, full_name, role, is_banned').eq('id', req.params.id).is('deleted_at', null).single();
+    // TODO(i18n): replace with i18n key
     if (!user) return error(res, 'المستخدم غير موجود', 404);
+    // TODO(i18n): replace with i18n key
     if (user.role === 'admin') return error(res, 'لا يمكن حظر حساب أدمن', 403);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -306,6 +320,7 @@ exports.suspendUser = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     await logAdmin(req, { action: 'suspend_user', target_type: 'user', target_id: user.id, before: { is_banned: user.is_banned }, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, `تم حظر المستخدم: ${user.full_name || user.id}`);
   } catch (err) {
     next(err);
@@ -313,12 +328,14 @@ exports.suspendUser = async (req, res, next) => {
 };
 
 // ─── DELETE /admin/users/:id ──────────────────────────────────────────────────
-// حذف ناعم متوافق مع GDPR (deleted_at) — auth middleware يرفض الدخول بعده
+// GDPR-compliant soft delete (deleted_at) — auth middleware rejects login afterwards
 exports.deleteUser = async (req, res, next) => {
   try {
     const { data: user } = await supabaseAdmin
       .from('users').select('id, full_name, role').eq('id', req.params.id).is('deleted_at', null).single();
+    // TODO(i18n): replace with i18n key
     if (!user) return error(res, 'المستخدم غير موجود', 404);
+    // TODO(i18n): replace with i18n key
     if (user.role === 'admin') return error(res, 'لا يمكن حذف حساب أدمن', 403);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -330,6 +347,7 @@ exports.deleteUser = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     await logAdmin(req, { action: 'delete_user', target_type: 'user', target_id: user.id, before: user, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, `تم حذف المستخدم: ${user.full_name || user.id}`);
   } catch (err) {
     next(err);
@@ -370,14 +388,16 @@ exports.getBookings = async (req, res, next) => {
 };
 
 // ─── PUT /admin/bookings/:id/cancel ───────────────────────────────────────────
-// يمرّ عبر cancel_booking_with_fee: الأدمن يلغي pending/confirmed/no_show؛ completed/cancelled محجوب للجميع.
+// goes through cancel_booking_with_fee: admin cancels pending/confirmed/no_show; completed/cancelled is blocked for everyone.
 exports.cancelBooking = async (req, res, next) => {
   try {
     const { reason } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!reason) return error(res, 'سبب الإلغاء (reason) مطلوب', 400);
 
     const { data: booking } = await supabaseAdmin
       .from('bookings').select('id, status').eq('id', req.params.id).single();
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
 
     const { data, error: dbErr } = await supabaseAdmin.rpc('cancel_booking_with_fee', {
@@ -387,10 +407,12 @@ exports.cancelBooking = async (req, res, next) => {
     });
     if (dbErr) throw dbErr;
     if (data && data.success === false) {
+      // TODO(i18n): replace with i18n key
       return error(res, data.message || 'تعذّر إلغاء الحجز', 400);
     }
 
     await logAdmin(req, { action: 'cancel_booking', target_type: 'booking', target_id: booking.id, before: { status: booking.status }, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إلغاء الحجز');
   } catch (err) {
     next(err);
@@ -413,12 +435,14 @@ exports.getCategories = async (req, res, next) => {
 exports.createCategory = async (req, res, next) => {
   try {
     const payload = pick(req.body, CATEGORY_FIELDS);
+    // TODO(i18n): replace with i18n key
     if (!payload.name_ar) return error(res, 'الاسم بالعربية (name_ar) مطلوب', 400);
     payload.created_by = req.user.id;
 
     const { data, error: dbErr } = await supabaseAdmin.from('categories').insert(payload).select('*').single();
     if (dbErr) throw dbErr;
     await logAdmin(req, { action: 'create_category', target_type: 'category', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إنشاء القسم', 201);
   } catch (err) { next(err); }
 };
@@ -426,25 +450,30 @@ exports.createCategory = async (req, res, next) => {
 exports.updateCategory = async (req, res, next) => {
   try {
     const payload = pick(req.body, CATEGORY_FIELDS);
+    // TODO(i18n): replace with i18n key
     if (Object.keys(payload).length === 0) return error(res, 'لا توجد حقول للتحديث', 400);
 
     const { data, error: dbErr } = await supabaseAdmin
       .from('categories').update(payload).eq('id', req.params.id).select('*').single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'القسم غير موجود', 404);
     await logAdmin(req, { action: 'update_category', target_type: 'category', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث القسم');
   } catch (err) { next(err); }
 };
 
 exports.deleteCategory = async (req, res, next) => {
   try {
-    // تعطيل بدل الحذف الصلب (قد ترتبط به محلات)
+    // deactivate instead of hard delete (businesses may be linked to it)
     const { data, error: dbErr } = await supabaseAdmin
       .from('categories').update({ is_active: false }).eq('id', req.params.id).select('id, name_ar, is_active').single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'القسم غير موجود', 404);
     await logAdmin(req, { action: 'disable_category', target_type: 'category', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تعطيل القسم');
   } catch (err) { next(err); }
 };
@@ -469,11 +498,13 @@ exports.createPlan = async (req, res, next) => {
   try {
     const payload = pick(req.body, PLAN_FIELDS);
     if (!payload.category_id || !payload.plan_code || !payload.name_ar) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'category_id وplan_code وname_ar مطلوبة', 400);
     }
     const { data, error: dbErr } = await supabaseAdmin.from('subscription_plans').insert(payload).select('*').single();
     if (dbErr) throw dbErr;
     await logAdmin(req, { action: 'create_plan', target_type: 'subscription', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إنشاء الباقة', 201);
   } catch (err) { next(err); }
 };
@@ -481,13 +512,16 @@ exports.createPlan = async (req, res, next) => {
 exports.updatePlan = async (req, res, next) => {
   try {
     const payload = pick(req.body, PLAN_FIELDS);
+    // TODO(i18n): replace with i18n key
     if (Object.keys(payload).length === 0) return error(res, 'لا توجد حقول للتحديث', 400);
     payload.updated_at = new Date().toISOString();
     const { data, error: dbErr } = await supabaseAdmin
       .from('subscription_plans').update(payload).eq('id', req.params.id).select('*').single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'الباقة غير موجودة', 404);
     await logAdmin(req, { action: 'edit_subscription_plan', target_type: 'subscription', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث الباقة');
   } catch (err) { next(err); }
 };
@@ -497,8 +531,10 @@ exports.deletePlan = async (req, res, next) => {
     const { data, error: dbErr } = await supabaseAdmin
       .from('subscription_plans').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', req.params.id).select('id, name_ar, is_active').single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'الباقة غير موجودة', 404);
     await logAdmin(req, { action: 'disable_plan', target_type: 'subscription', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تعطيل الباقة');
   } catch (err) { next(err); }
 };
@@ -527,10 +563,12 @@ exports.getAds = async (req, res, next) => {
 exports.createAd = async (req, res, next) => {
   try {
     const payload = pick(req.body, AD_FIELDS);
+    // TODO(i18n): replace with i18n key
     if (!payload.type) return error(res, 'نوع الإعلان (type) مطلوب: splash|search|badge|category', 400);
     const { data, error: dbErr } = await supabaseAdmin.from('ads').insert(payload).select('*').single();
     if (dbErr) throw dbErr;
     await logAdmin(req, { action: 'create_ad', target_type: 'ad', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إنشاء الإعلان', 201);
   } catch (err) { next(err); }
 };
@@ -538,11 +576,14 @@ exports.createAd = async (req, res, next) => {
 exports.updateAd = async (req, res, next) => {
   try {
     const payload = pick(req.body, AD_FIELDS);
+    // TODO(i18n): replace with i18n key
     if (Object.keys(payload).length === 0) return error(res, 'لا توجد حقول للتحديث', 400);
     const { data, error: dbErr } = await supabaseAdmin.from('ads').update(payload).eq('id', req.params.id).select('*').single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'الإعلان غير موجود', 404);
     await logAdmin(req, { action: 'update_ad', target_type: 'ad', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث الإعلان');
   } catch (err) { next(err); }
 };
@@ -552,6 +593,7 @@ exports.deleteAd = async (req, res, next) => {
     const { error: dbErr } = await supabaseAdmin.from('ads').delete().eq('id', req.params.id);
     if (dbErr) throw dbErr;
     await logAdmin(req, { action: 'delete_ad', target_type: 'ad', target_id: req.params.id });
+    // TODO(i18n): replace with i18n key
     return success(res, { id: req.params.id }, 'تم حذف الإعلان');
   } catch (err) { next(err); }
 };
@@ -585,7 +627,9 @@ exports.approveWithdrawal = async (req, res, next) => {
   try {
     const { data: wr } = await supabaseAdmin
       .from('points_withdrawal_requests').select('id, status, amount, business_id').eq('id', req.params.id).single();
+    // TODO(i18n): replace with i18n key
     if (!wr) return error(res, 'طلب السحب غير موجود', 404);
+    // TODO(i18n): replace with i18n key
     if (wr.status !== 'pending') return error(res, 'الطلب ليس قيد الانتظار', 400);
 
     const now = new Date().toISOString();
@@ -598,6 +642,7 @@ exports.approveWithdrawal = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     await logAdmin(req, { action: 'approve_withdrawal', target_type: 'withdrawal', target_id: wr.id, before: { status: wr.status }, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تأكيد تحويل السحب');
   } catch (err) { next(err); }
 };
@@ -605,11 +650,14 @@ exports.approveWithdrawal = async (req, res, next) => {
 exports.rejectWithdrawal = async (req, res, next) => {
   try {
     const { reason } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!reason) return error(res, 'سبب الرفض (reason) مطلوب', 400);
 
     const { data: wr } = await supabaseAdmin
       .from('points_withdrawal_requests').select('id, status').eq('id', req.params.id).single();
+    // TODO(i18n): replace with i18n key
     if (!wr) return error(res, 'طلب السحب غير موجود', 404);
+    // TODO(i18n): replace with i18n key
     if (wr.status !== 'pending') return error(res, 'الطلب ليس قيد الانتظار', 400);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -621,6 +669,7 @@ exports.rejectWithdrawal = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     await logAdmin(req, { action: 'reject_withdrawal', target_type: 'withdrawal', target_id: wr.id, before: { status: wr.status }, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم رفض طلب السحب');
   } catch (err) { next(err); }
 };
@@ -646,6 +695,7 @@ exports.resolveReport = async (req, res, next) => {
   try {
     const status = req.body?.status || 'resolved';
     if (!['reviewed', 'resolved', 'dismissed'].includes(status)) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'حالة غير صالحة: reviewed|resolved|dismissed', 400);
     }
     const { data, error: dbErr } = await supabaseAdmin
@@ -655,8 +705,10 @@ exports.resolveReport = async (req, res, next) => {
       .select('*')
       .single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'البلاغ غير موجود', 404);
     await logAdmin(req, { action: 'resolve_report', target_type: 'report', target_id: data.id, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث البلاغ');
   } catch (err) { next(err); }
 };
@@ -678,11 +730,14 @@ exports.updateSetting = async (req, res, next) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
+    // TODO(i18n): replace with i18n key
     if (value === undefined) return error(res, 'القيمة (value) مطلوبة', 400);
     if (LOCKED_SETTINGS.includes(key)) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'هذا الإعداد ثابت ولا يمكن تعديله', 403);
     }
     const { data: before } = await supabaseAdmin.from('platform_settings').select('value').eq('key', key).single();
+    // TODO(i18n): replace with i18n key
     if (!before) return error(res, 'الإعداد غير موجود', 404);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -702,6 +757,7 @@ exports.updateSetting = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     await logAdmin(req, { action: 'update_setting', target_type: 'setting', target_id: null, before: { key, value: before.value }, after: data });
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث الإعداد');
   } catch (err) { next(err); }
 };
@@ -717,20 +773,22 @@ exports.getStats = async (req, res, next) => {
       supabaseAdmin.from('users').select('created_at').gte('created_at', since90).is('deleted_at', null),
     ]);
 
-    // No-Show بالمحافظة
+    // No-Show by province
     const noShowByProvince = {};
+    // TODO(i18n): replace with i18n key
     (noShows || []).forEach((b) => { const p = b.business?.province || 'غير محدد'; noShowByProvince[p] = (noShowByProvince[p] || 0) + 1; });
 
-    // متوسط قيمة الحجز بالقسم
+    // average booking value by category
     const byCat = {};
     (completed || []).forEach((b) => {
+      // TODO(i18n): replace with i18n key
       const c = b.services?.category_id || 'غير محدد';
       byCat[c] = byCat[c] || { total: 0, count: 0 };
       byCat[c].total += b.price || 0; byCat[c].count += 1;
     });
     const avgBookingByCategory = Object.entries(byCat).map(([category_id, v]) => ({ category_id, avg: Math.round(v.total / v.count), count: v.count }));
 
-    // نمو المستخدمين أسبوعياً (آخر 12 أسبوع)
+    // weekly user growth (last 12 weeks)
     const byWeek = {};
     (newUsers || []).forEach((u) => {
       const d = new Date(u.created_at);
@@ -812,6 +870,7 @@ exports.exportReport = async (req, res, next) => {
       (data || []).forEach((b) => { const k = b.payment_method || 'cash'; agg[k] = agg[k] || { count: 0, total: 0 }; agg[k].count += 1; agg[k].total += b.price || 0; });
       rows = Object.entries(agg).map(([payment_method, v]) => ({ payment_method, count: v.count, total: v.total }));
     } else {
+      // TODO(i18n): replace with i18n key
       return error(res, 'نوع تقرير غير معروف: revenue|businesses|users|payments', 400);
     }
 
@@ -819,6 +878,6 @@ exports.exportReport = async (req, res, next) => {
     await logAdmin(req, { action: 'export_report', target_type: 'report', target_id: null, after: { kind, rows: rows.length } });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${kind}-report.csv"`);
-    return res.send('﻿' + csv); // BOM لدعم العربية في Excel
+    return res.send('﻿' + csv); // BOM so Excel renders Arabic correctly
   } catch (err) { next(err); }
 };

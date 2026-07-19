@@ -41,13 +41,17 @@ exports.create = async (req, res, next) => {
     const { booking_id, business_rating, staff_id, staff_rating } = req.body;
     const business_comment = req.body.business_comment ?? req.body.comment;
 
+    // TODO(i18n): replace with i18n key
     if (!booking_id)      return error(res, 'booking_id مطلوب', 400);
+    // TODO(i18n): replace with i18n key
     if (!business_rating) return error(res, 'business_rating مطلوب', 400);
 
     if (![1, 2, 3, 4, 5].includes(Number(business_rating))) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'business_rating يجب أن يكون بين 1 و 5', 400);
     }
     if (staff_rating !== undefined && ![1, 2, 3, 4, 5].includes(Number(staff_rating))) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'staff_rating يجب أن يكون بين 1 و 5', 400);
     }
 
@@ -64,8 +68,11 @@ exports.create = async (req, res, next) => {
 
     if (!result?.success) {
       const code = result?.code;
+      // TODO(i18n): replace with i18n key
       if (code === 'NO_COMPLETED_BOOKING') return error(res, result.message || 'يجب إكمال الموعد قبل التقييم', 404);
+      // TODO(i18n): replace with i18n key
       if (code === 'FEATURE_NOT_AVAILABLE') return error(res, result.message || 'التقييمات غير متاحة لهذا المحل', 403);
+      // TODO(i18n): replace with i18n key
       return error(res, 'حدث خطأ أثناء إنشاء التقييم', 500);
     }
 
@@ -76,6 +83,7 @@ exports.create = async (req, res, next) => {
       .eq('id', booking_id);
     if (flagErr) console.error('failed to set bookings.is_reviewed:', flagErr.message);
 
+    // TODO(i18n): replace with i18n key
     return success(res, { review_id: result.review_id }, 'تم إضافة التقييم بنجاح', 201);
   } catch (err) {
     next(err);

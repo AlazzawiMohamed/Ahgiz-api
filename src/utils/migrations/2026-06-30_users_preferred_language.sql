@@ -7,4 +7,4 @@ ALTER TABLE users
     CHECK (preferred_language IN ('ar','en','ku'));
 
 COMMENT ON COLUMN users.preferred_language IS
-  'لغة الواجهة المفضّلة للمستخدم — تُزامَن عبر الأجهزة (ar/en/ku)';
+  'user''s preferred UI language — synced across devices (ar/en/ku)';

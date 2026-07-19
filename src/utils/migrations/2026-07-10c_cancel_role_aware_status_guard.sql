@@ -42,7 +42,7 @@ BEGIN
       'message', 'الحجز غير موجود');
   END IF;
 
-  -- تحديد من يُلغي — يُحسب قبل حارس الحالة (الحارس صار مدرِكاً للدور)
+  -- determine who is cancelling — computed before the status guard (guard is now role-aware)
   v_is_owner := EXISTS (
     SELECT 1 FROM businesses WHERE id = v_booking.business_id AND owner_id = p_cancelled_by
   );
@@ -55,10 +55,10 @@ BEGIN
     ELSE 'customer'
   END;
 
-  -- حارس الحالة المدرِك للدور:
-  --   الزبون: pending/confirmed فقط
-  --   الأدمن/المالك: pending/confirmed/no_show
-  --   completed/cancelled: محجوب للجميع (حد أمان صلب — لا عكس لحجز مكتمل/مدفوع)
+  -- role-aware status guard:
+  --   customer: pending/confirmed only
+  --   admin/owner: pending/confirmed/no_show
+  --   completed/cancelled: blocked for everyone (hard safety limit — no reversal of a completed/paid booking)
   IF v_booking.status NOT IN ('pending', 'confirmed', 'no_show')
      OR (v_booking.status = 'no_show' AND v_who = 'customer') THEN
     RETURN jsonb_build_object(
@@ -67,7 +67,7 @@ BEGIN
     );
   END IF;
 
-  -- رسوم الإلغاء — على الزبون فقط (غير متأثّر بالتغيير)
+  -- cancellation fee — customer only (unaffected by this change)
   v_fee := CASE
     WHEN v_who = 'customer' THEN calculate_cancellation_fee(p_booking_id)
     ELSE 0
@@ -82,7 +82,7 @@ BEGIN
     updated_at              = NOW()
   WHERE id = p_booking_id;
 
-  -- ── عكس نقاط الولاء ─────────────────────────────────────────────
+  -- ── reverse loyalty points ─────────────────────────────────────────────
   IF COALESCE(v_booking.points_redeemed, 0) > 0 THEN
     INSERT INTO points_transactions
       (customer_id, booking_id, type, points, points_category, expires_at, note)
@@ -103,7 +103,7 @@ BEGIN
     ELSE 'تم الإلغاء بنجاح'
   END;
 
-  -- استرداد ZainCash تلقائياً
+  -- automatic ZainCash refund
   IF v_booking.payment_method = 'zaincash'
      AND COALESCE(v_booking.payment_status, 'unpaid') = 'paid' THEN
     v_refund_amount := GREATEST(0, v_booking.price - v_fee);

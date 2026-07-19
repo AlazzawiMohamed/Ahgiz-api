@@ -33,28 +33,33 @@ exports.create = async (req, res, next) => {
     } = req.body;
 
     if (!business_id || !service_id || !booking_date || !start_time) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'business_id, service_id, booking_date, start_time مطلوبة', 400);
     }
 
     // Validate booking_type
     if (!['in_person', 'online'].includes(booking_type)) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'booking_type يجب أن يكون in_person أو online', 400);
     }
 
     // Validate payment_method
     const validPayments = ['cash', 'points', 'partial_points', 'zaincash', 'asiahawala'];
     if (!validPayments.includes(payment_method)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `payment_method غير صالح`, 400);
     }
 
     // Validate date is not in the past
     if (new Date(booking_date) < new Date(new Date().toDateString())) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا يمكن الحجز في تاريخ ماضٍ', 400);
     }
 
     // Validate the exact start moment is not in the past (Iraq local, UTC+3)
     const startAt = new Date(`${booking_date}T${start_time}+03:00`);
     if (!isNaN(startAt) && startAt.getTime() < Date.now()) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا يمكن الحجز في وقت ماضٍ — اختر موعداً قادماً', 400);
     }
 
@@ -67,6 +72,7 @@ exports.create = async (req, res, next) => {
       .eq('is_active', true)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (svcErr || !service) return error(res, 'الخدمة غير موجودة أو غير نشطة', 404);
 
     // Validate staff belongs to this business (if provided)
@@ -79,6 +85,7 @@ exports.create = async (req, res, next) => {
         .eq('is_active', true)
         .single();
 
+      // TODO(i18n): replace with i18n key
       if (!staffMember) return error(res, 'الموظف غير موجود في هذا المحل', 404);
     }
 
@@ -91,6 +98,7 @@ exports.create = async (req, res, next) => {
     let addonSnapshot = [];
     if (selected_addons !== undefined) {
       if (!Array.isArray(selected_addons)) {
+        // TODO(i18n): replace with i18n key
         return error(res, 'selected_addons يجب أن تكون مصفوفة', 400);
       }
       addonIds = [...new Set(selected_addons)];
@@ -105,6 +113,7 @@ exports.create = async (req, res, next) => {
 
         if (addonErr) throw addonErr;
         if ((addonRows?.length || 0) !== addonIds.length) {
+          // TODO(i18n): replace with i18n key
           return error(res, 'إحدى الإضافات المختارة غير صالحة', 400);
         }
         // Snapshot stored on the booking (price frozen at booking time)
@@ -167,11 +176,13 @@ exports.create = async (req, res, next) => {
     if (dbErr) {
       // DB trigger raises P0001 on time conflict
       if (dbErr.code === '23505' || dbErr.code === 'P0001') {
+        // TODO(i18n): replace with i18n key
         return error(res, 'هذا الموعد محجوز مسبقاً، اختر وقتاً آخر', 409);
       }
       throw dbErr;
     }
 
+    // TODO(i18n): replace with i18n key
     return success(res, booking, 'تم إنشاء الحجز بنجاح', 201);
   } catch (err) {
     next(err);
@@ -199,7 +210,7 @@ exports.getMy = async (req, res, next) => {
     const limit  = Math.min(parseInt(req.query.limit, 10) || 20, 50);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-    // الحد الفاصل بين "قادمة" و"سابقة" = لحظة الموعد الفعلية (تاريخ + وقت) بتوقيت العراق
+    // the boundary between "upcoming" and "past" = the actual appointment moment (date + time) in Iraq time
     const nowIraq = new Date(Date.now() + 3 * 60 * 60 * 1000); // UTC+3 (no DST)
     const today   = nowIraq.toISOString().slice(0, 10);
     const nowTime = nowIraq.toISOString().slice(11, 19);
@@ -242,10 +253,12 @@ exports.getById = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (dbErr || !booking) return error(res, 'الحجز غير موجود', 404);
 
     // Customer can only see their own bookings
     if (req.user.role === 'customer' && booking.customer_id !== req.user.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'ليس لديك صلاحية لعرض هذا الحجز', 403);
     }
 
@@ -265,13 +278,16 @@ exports.confirm = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
 
     if (req.user.role === 'customer' && booking.customer_id !== req.user.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'ليس لديك صلاحية لتأكيد هذا الحجز', 403);
     }
 
     if (['cancelled', 'completed', 'no_show'].includes(booking.status)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `لا يمكن تأكيد حجز بحالة: ${booking.status}`, 400);
     }
 
@@ -279,6 +295,7 @@ exports.confirm = async (req, res, next) => {
     if (booking.status === 'confirmed') {
       const { data: existing } = await supabaseAdmin
         .from('bookings').select(BOOKING_SELECT).eq('id', booking.id).single();
+      // TODO(i18n): replace with i18n key
       return success(res, existing, 'الحجز مؤكد مسبقاً');
     }
 
@@ -299,6 +316,7 @@ exports.confirm = async (req, res, next) => {
       console.error('schedule_booking_notifications failed:', rpcErr.message);
     }
 
+    // TODO(i18n): replace with i18n key
     return success(res, updated, 'تم تأكيد الحجز');
   } catch (err) {
     next(err);
@@ -306,28 +324,31 @@ exports.confirm = async (req, res, next) => {
 };
 
 // ─── PUT /bookings/:id/cancel ─────────────────────────────────────────────────
-// يمرّ عبر cancel_booking_with_fee: رسوم + استرداد + إشعارات + عكس نقاط + قائمة انتظار.
-// حارس الحالة (pending/confirmed للزبون) داخل الـRPC.
+// goes through cancel_booking_with_fee: fee + refund + notifications + points reversal + waitlist.
+// status guard (pending/confirmed for the customer) inside the RPC.
 exports.cancel = async (req, res, next) => {
   try {
-    // سبب الإلغاء نص حر اختياري (كان قائمة رموز ثابتة)
+    // cancellation reason is optional free text (was a fixed list of codes)
     const { cancel_reason_code } = req.body;
 
     if (cancel_reason_code != null && typeof cancel_reason_code !== 'string') {
+      // TODO(i18n): replace with i18n key
       return error(res, 'سبب الإلغاء غير صالح', 400);
     }
     const cancelReason = (cancel_reason_code || '').trim().slice(0, 200) || null;
 
-    // فحص الملكية — الـRPC يشتقّ الدور لكنه لا يتحقّق أن المستدعي يملك الحجز
+    // ownership check — the RPC derives the role but does not verify the caller owns the booking
     const { data: booking } = await supabaseAdmin
       .from('bookings')
       .select('id, customer_id')
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
 
     if (req.user.role === 'customer' && booking.customer_id !== req.user.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'ليس لديك صلاحية لإلغاء هذا الحجز', 403);
     }
 
@@ -340,9 +361,11 @@ exports.cancel = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     if (data && data.success === false) {
+      // TODO(i18n): replace with i18n key
       return error(res, data.message || 'تعذّر إلغاء الحجز', 400);
     }
 
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إلغاء الحجز');
   } catch (err) {
     next(err);
@@ -350,7 +373,7 @@ exports.cancel = async (req, res, next) => {
 };
 
 // ─── PUT /bookings/:id/hide ───────────────────────────────────────────────────
-// إخفاء الحجز من قائمة العميل فقط (soft-hide) — البيانات لا تُحذف ويبقى ظاهراً للمحل.
+// hide the booking from the customer list only (soft-hide) — data is not deleted and it stays visible to the business.
 exports.hide = async (req, res, next) => {
   try {
     const { data: booking } = await supabaseAdmin
@@ -359,9 +382,11 @@ exports.hide = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
 
     if (booking.customer_id !== req.user.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'ليس لديك صلاحية لهذا الحجز', 403);
     }
 
@@ -372,6 +397,7 @@ exports.hide = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
+    // TODO(i18n): replace with i18n key
     return success(res, { id: booking.id }, 'تم حذف الحجز من قائمتك');
   } catch (err) {
     next(err);
@@ -392,18 +418,22 @@ exports.cancelRequest = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
 
     if (req.user.role === 'customer' && booking.customer_id !== req.user.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'ليس لديك صلاحية لهذا الحجز', 403);
     }
 
     if (['cancelled', 'completed', 'no_show'].includes(booking.status)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `لا يمكن طلب إلغاء حجز بحالة: ${booking.status}`, 400);
     }
 
     // Idempotent: already requested → succeed without re-notifying the owner
     if (booking.cancellation_requested) {
+      // TODO(i18n): replace with i18n key
       return success(res, { id: booking.id }, 'تم إرسال طلب الإلغاء مسبقاً');
     }
 
@@ -418,6 +448,7 @@ exports.cancelRequest = async (req, res, next) => {
     const ownerPhone = booking.business?.owner?.phone;
     if (ownerPhone) {
       const msg =
+        // TODO(i18n): replace with i18n key
         `🔔 طلب إلغاء حجز\n\n` +
         `العميل يطلب إلغاء حجزه في "${booking.business?.name || ''}"\n` +
         `📅 ${booking.booking_date} • ${String(booking.start_time).slice(0, 5)}\n\n` +
@@ -429,6 +460,7 @@ exports.cancelRequest = async (req, res, next) => {
       }
     }
 
+    // TODO(i18n): replace with i18n key
     return success(res, { id: booking.id }, 'تم إرسال طلب الإلغاء');
   } catch (err) {
     next(err);

@@ -5,6 +5,7 @@ const { error } = require('../utils/response');
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
+    // TODO(i18n): replace with i18n key
     return error(res, 'غير مصرح — أرسل: Authorization: Bearer <token>', 401);
   }
 
@@ -18,6 +19,7 @@ const authenticate = async (req, res, next) => {
       audience:   process.env.JWT_AUDIENCE  || 'ahgiz-api',
     });
   } catch (err) {
+    // TODO(i18n): replace with i18n key
     const msg = err.name === 'TokenExpiredError'
       ? 'انتهت صلاحية الجلسة — استخدم refreshToken'
       : 'التوكن غير صالح';
@@ -25,6 +27,7 @@ const authenticate = async (req, res, next) => {
   }
 
   if (decoded.type !== 'access') {
+    // TODO(i18n): replace with i18n key
     return error(res, 'نوع التوكن خاطئ', 401);
   }
 
@@ -34,12 +37,16 @@ const authenticate = async (req, res, next) => {
     .eq('id', decoded.id)
     .single();
 
+  // TODO(i18n): replace with i18n key
   if (!user || user.deleted_at) return error(res, 'المستخدم غير موجود', 401);
+  // TODO(i18n): replace with i18n key
   if (!user.is_active)          return error(res, 'الحساب معطل', 401);
+  // TODO(i18n): replace with i18n key
   if (user.is_banned)           return error(res, 'الحساب محظور', 403);
 
   // Invalidate tokens issued before min_iat (forced logout / password-change)
   if (user.min_iat && decoded.iat < new Date(user.min_iat).getTime() / 1000) {
+    // TODO(i18n): replace with i18n key
     return error(res, 'الجلسة ملغاة — سجل دخولك مجدداً', 401);
   }
 
@@ -53,8 +60,10 @@ const authenticate = async (req, res, next) => {
 };
 
 const authorize = (...roles) => (req, res, next) => {
+  // TODO(i18n): replace with i18n key
   if (!req.user) return error(res, 'غير مصرح', 401);
   if (!roles.includes(req.user.role)) {
+    // TODO(i18n): replace with i18n key
     return error(res, `الوصول مخصص لـ: ${roles.join(', ')}`, 403);
   }
   next();

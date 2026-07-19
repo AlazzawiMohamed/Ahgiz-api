@@ -29,7 +29,7 @@ const getAvailableSlots = async ({
   businessId, staffId, date, durationMins, slotIntervalMins = 30,
 }) => {
   const dayOfWeek = getDayOfWeek(date);
-  // "اليوم" و"الآن" بتوقيت العراق لا بتوقيت الخادم (كان UTC → تسريب مواعيد ماضية حتى 3 ساعات مساءً)
+  // "today" and "now" in Iraq time, not server time (was UTC -> leaked past slots until 3pm)
   const nowIraq = new Date(Date.now() + IRAQ_OFFSET_MS);
   const isToday = date === nowIraq.toISOString().slice(0, 10);
 

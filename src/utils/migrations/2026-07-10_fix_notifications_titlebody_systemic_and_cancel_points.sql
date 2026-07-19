@@ -84,7 +84,7 @@ BEGIN
     no_show_fee_charged = TRUE,
     no_show_fee_amount  = v_fee;
 
-  -- إشعار الزبون  [FIXED: title/body → message]
+  -- notify customer  [FIXED: title/body → message]
   INSERT INTO notifications (user_id, type, message, booking_id)
   VALUES (v_booking.customer_id, 'no_show_fee',
     'رسوم غياب مُطبَّقة' || E'\n' ||
@@ -183,7 +183,7 @@ BEGIN
         'changed_at',    NOW()
       ));
 
-    -- إشعار فوري لكل الأدمن  [FIXED: title/body → message]
+    -- immediate notification to all admins  [FIXED: title/body → message]
     INSERT INTO notifications (user_id, type, message, channel, priority)
     SELECT id, 'security_critical',
       '🚨 تغيير خوارزمية JWT' || E'\n' ||
@@ -254,10 +254,10 @@ BEGIN
     updated_at              = NOW()
   WHERE id = p_booking_id;
 
-  -- ── عكس نقاط الولاء ─────────────────────────────────────────────
-  -- (a) استرجاع النقاط المستردَّة (المصروفة) على الحجز → نوع كسب مخصّص جديد
-  --     redemption_refund (مُضاف للجانب الموجب في مواقع الرصيد الثلاثة).
-  --     balance_after يضبطه trigger trg_calculate_balance_after (BEFORE INSERT).
+  -- ── reverse loyalty points ─────────────────────────────────────────────
+  -- (a) refund the redeemed (spent) points on the booking → new dedicated earn type
+  --     redemption_refund (added to the positive side in all three balance locations).
+  --     balance_after is set by trigger trg_calculate_balance_after (BEFORE INSERT).
   IF COALESCE(v_booking.points_redeemed, 0) > 0 THEN
     INSERT INTO points_transactions
       (customer_id, booking_id, type, points, points_category, expires_at, note)
@@ -265,9 +265,9 @@ BEGIN
       v_booking.points_redeemed, 'general', NOW() + INTERVAL '6 months',
       'استرجاع نقاط مستردَّة عند إلغاء الحجز #' || LEFT(p_booking_id::TEXT, 8));
   END IF;
-  -- (b) حافة «مكتمل ثم أُلغي»: سحب أي نقاط ولاء مُنِحت على هذا الحجز (شبكة أمان).
-  --     غير قابلة للوصول عبر هذا المسار حالياً (الحارس pending/confirmed) لكن
-  --     مطلوبة صراحةً كضمانة. admin_deduct نوع صرف قائم (يُطرح في كل صيغ الرصيد).
+  -- (b) "completed then cancelled" edge: claw back any loyalty points granted on this booking (safety net).
+  --     Not reachable via this path currently (the pending/confirmed guard), but
+  --     explicitly required as a guarantee. admin_deduct is an existing spend type (subtracted in every balance formula).
   INSERT INTO points_transactions
     (customer_id, booking_id, type, points, points_category, note)
   SELECT customer_id, p_booking_id, 'admin_deduct', points, 'general',
@@ -281,7 +281,7 @@ BEGIN
     ELSE 'تم الإلغاء بنجاح'
   END;
 
-  -- استرداد ZainCash تلقائياً
+  -- automatic ZainCash refund
   IF v_booking.payment_method = 'zaincash'
      AND COALESCE(v_booking.payment_status, 'unpaid') = 'paid' THEN
     v_refund_amount := GREATEST(0, v_booking.price - v_fee);
@@ -296,7 +296,7 @@ BEGIN
       END;
     END IF;
 
-  -- إشعار إداري لاسترداد AsiaHawala (يدوي دائماً)  [FIXED: title/body → message]
+  -- admin notification for AsiaHawala refund (always manual)  [FIXED: title/body → message]
   ELSIF v_booking.payment_method = 'asiahawala'
         AND COALESCE(v_booking.payment_status, 'unpaid') = 'paid' THEN
     INSERT INTO notifications (user_id, type, message, booking_id, channel)
@@ -308,7 +308,7 @@ BEGIN
     v_message := v_message || ' — سيُعالَج الاسترداد يدوياً عبر AsiaHawala';
   END IF;
 
-  -- إشعار الطرف الآخر  [FIXED: title/body → message]
+  -- notify the other party  [FIXED: title/body → message]
   INSERT INTO notifications (user_id, type, message, booking_id)
   VALUES (
     CASE WHEN v_who = 'customer' THEN
@@ -319,7 +319,7 @@ BEGIN
     p_booking_id
   );
 
-  -- انتظار القائمة  [FIXED: correct arg order (business_id, date, time, service_id, staff_id)]
+  -- waitlist  [FIXED: correct arg order (business_id, date, time, service_id, staff_id)]
   PERFORM notify_waitlist_on_availability(
     v_booking.business_id, v_booking.booking_date, v_booking.start_time,
     v_booking.service_id, v_booking.staff_id
@@ -429,7 +429,7 @@ BEGIN
     VALUES ('platform_settings', 'jwt_config_issues_detected',
       jsonb_build_object('issues', v_issues, 'algorithm', v_algorithm));
 
-    -- إشعار الأدمن  [FIXED: title/body → message]
+    -- notify admin  [FIXED: title/body → message]
     INSERT INTO notifications (user_id, type, message, channel, priority)
     SELECT id, 'security_config_alert',
       '⚠️ JWT Configuration Issues' || E'\n' ||
@@ -571,7 +571,7 @@ BEGIN
         'device_name',      v_token.device_name
       ));
 
-    -- إشعار للمستخدم  [FIXED: title/body → message]
+    -- notify user  [FIXED: title/body → message]
     INSERT INTO notifications (user_id, type, message, channel, priority)
     VALUES (v_token.user_id, 'security_alert',
       '⚠️ تسجيل دخول من جهاز جديد' || E'\n' ||

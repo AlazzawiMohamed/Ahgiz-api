@@ -18,12 +18,13 @@ router.use('/referral',      require('./referral.routes'));
 router.use('/medical',       require('./medical.routes'));
 router.use('/search',        require('./search.routes'));
 router.use('/owner',         require('./owner.routes'));
-router.use('/admin/auth',    require('./adminAuth.routes')); // عام — قبل /admin المحمي
+router.use('/admin/auth',    require('./adminAuth.routes')); // public — before the protected /admin
 router.use('/admin',         require('./admin.routes'));
 
 router.get('/health', (req, res) => {
   res.json({
     status: 'success',
+    // TODO(i18n): replace with i18n key
     message: 'احجز API يعمل بنجاح',
     timestamp: new Date().toISOString(),
     version: '1.0.0',

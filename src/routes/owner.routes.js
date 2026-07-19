@@ -8,11 +8,12 @@ const requireBusiness  = require('../middleware/requireBusiness');
 const validate = require('../middleware/validate');
 const ownerSchema = require('../schemas/owner.schema');
 
-// غلاف multer: يحوّل أخطاء الرفع (الحجم/النوع) إلى 400 برسالة عربية واضحة.
+// multer wrapper: converts upload errors (size/type) into a 400 with a clear user-facing message.
 const medicalFileUpload = (req, res, next) =>
   uploadMedical.single('file')(req, res, (err) => {
     if (!err) return next();
     err.statusCode = 400;
+    // TODO(i18n): replace with i18n key
     if (err.code === 'LIMIT_FILE_SIZE') err.message = 'الحد الأقصى لحجم الملف 10MB';
     next(err);
   });
@@ -24,7 +25,7 @@ router.use(requireBusiness);
 
 router.get('/dashboard',                  ownerController.getDashboard);
 
-// Calendar (Sprint 4) — قبل /bookings العامة
+// Calendar (Sprint 4) — before the public /bookings
 router.get('/bookings/calendar',          ownerController.getCalendar);
 router.get('/bookings/day-indicators',    ownerController.getDayIndicators);
 
@@ -41,7 +42,7 @@ router.post('/clients/:customerId/notes',           validate(ownerSchema.createC
 router.put('/clients/:customerId/notes/:noteId',    validate(ownerSchema.updateClientNote), ownerController.updateClientNote);
 router.delete('/clients/:customerId/notes/:noteId', ownerController.deleteClientNote);
 
-// Medical/legal record (Sprint 4) — صاحب الحجز فقط
+// Medical/legal record (Sprint 4) — booking owner only
 router.get('/bookings/:id/medical-record', medicalController.getRecord);
 router.put('/bookings/:id/medical-record', validate(ownerSchema.upsertMedicalRecord), medicalController.upsertRecord);
 router.post('/bookings/:id/medical-files', medicalFileUpload, validate(ownerSchema.uploadMedicalFile), medicalController.uploadFile);

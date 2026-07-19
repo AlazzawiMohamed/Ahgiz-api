@@ -9,6 +9,7 @@ const medicalFileUpload = (req, res, next) =>
   uploadMedical.single('file')(req, res, (err) => {
     if (!err) return next();
     err.statusCode = 400;
+    // TODO(i18n): replace with i18n key
     if (err.code === 'LIMIT_FILE_SIZE') err.message = 'الحد الأقصى لحجم الملف 10MB';
     next(err);
   });

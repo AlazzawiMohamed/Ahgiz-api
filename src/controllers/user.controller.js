@@ -11,6 +11,7 @@ exports.getProfile = async (req, res, next) => {
       .is('deleted_at', null)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (dbErr || !user) return error(res, 'المستخدم غير موجود', 404);
 
     // province is stored as a governorates.slug — attach the Arabic name for display
@@ -73,6 +74,7 @@ exports.updateProfile = async (req, res, next) => {
 
     if (req.body.gender !== undefined) {
       if (req.body.gender !== null && !['male', 'female', 'prefer_not_to_say'].includes(req.body.gender)) {
+        // TODO(i18n): replace with i18n key
         return error(res, 'قيمة الجنس غير صالحة', 400);
       }
       updates.gender = req.body.gender || null;
@@ -80,18 +82,21 @@ exports.updateProfile = async (req, res, next) => {
 
     if (req.body.province !== undefined) {
       const { slug, invalid } = await resolveProvinceSlug(req.body.province);
+      // TODO(i18n): replace with i18n key
       if (invalid) return error(res, 'المحافظة غير صالحة', 400);
       updates.province = slug;
     }
 
     if (req.body.preferred_language !== undefined) {
       if (!['ar', 'en', 'ku'].includes(req.body.preferred_language)) {
+        // TODO(i18n): replace with i18n key
         return error(res, 'لغة غير صالحة', 400);
       }
       updates.preferred_language = req.body.preferred_language;
     }
 
     if (!Object.keys(updates).length) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا توجد حقول صالحة للتحديث', 400);
     }
 
@@ -122,6 +127,7 @@ exports.updateProfile = async (req, res, next) => {
       .eq('customer_id', data.id)
       .maybeSingle();
 
+    // TODO(i18n): replace with i18n key
     return success(res, { ...data, province_name, loyalty_points: bal?.balance ?? 0 }, 'تم تحديث الملف الشخصي');
   } catch (err) {
     next(err);
@@ -156,6 +162,7 @@ exports.recordConsent = async (req, res, next) => {
       recorded: true,
       privacy_version: CONSENT_PRIVACY_VERSION,
       terms_version:   CONSENT_TERMS_VERSION,
+    // TODO(i18n): replace with i18n key
     }, 'تم تسجيل الموافقة');
   } catch (err) {
     next(err);
@@ -170,9 +177,11 @@ exports.savePushToken = async (req, res, next) => {
     const { token, platform, device_name, app_version, environment } = req.body;
 
     if (!token || typeof token !== 'string') {
+      // TODO(i18n): replace with i18n key
       return error(res, 'token مطلوب', 400);
     }
     if (!['ios', 'android'].includes(platform)) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'platform يجب أن يكون ios أو android', 400);
     }
     const env = ['development', 'staging', 'production'].includes(environment)
@@ -194,6 +203,7 @@ exports.savePushToken = async (req, res, next) => {
 
     if (dbErr) throw dbErr;
 
+    // TODO(i18n): replace with i18n key
     return success(res, { saved: true }, 'تم حفظ توكن الإشعارات');
   } catch (err) {
     next(err);
@@ -202,6 +212,7 @@ exports.savePushToken = async (req, res, next) => {
 
 exports.updateAvatar = async (req, res, next) => {
   try {
+    // TODO(i18n): replace with i18n key
     if (!req.file) return error(res, 'الصورة مطلوبة', 400);
 
     const fileName = `avatars/${req.user.id}-${Date.now()}`;
@@ -223,13 +234,14 @@ exports.updateAvatar = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث الصورة الشخصية');
   } catch (err) {
     next(err);
   }
 };
 
-// POST /users/delete-account — يسجّل الطلب ويجمّد الحساب فوراً (حذف نهائي بعد 30 يوماً)
+// POST /users/delete-account — records the request and freezes the account immediately (permanent deletion after 30 days)
 const DELETE_REASON_CODES = ['bad_experience', 'poor_performance', 'technical_issue', 'not_needed', 'other'];
 
 exports.deleteAccount = async (req, res, next) => {
@@ -264,13 +276,14 @@ exports.deleteAccount = async (req, res, next) => {
       .eq('id', req.user.id);
     if (updErr) throw updErr;
 
+    // TODO(i18n): replace with i18n key
     return success(res, { scheduled_at: scheduledAt }, 'تم استلام طلب حذف الحساب');
   } catch (err) {
     next(err);
   }
 };
 
-// GET /users/bookings — حجوزاتي مع pagination وفلتر الحالة
+// GET /users/bookings — my bookings with pagination and status filter
 exports.getMyBookings = async (req, res, next) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;

@@ -14,7 +14,7 @@ DECLARE
   v_user   RECORD;
   v_count  INTEGER := 0;
 BEGIN
-  -- المستخدمون الذين مضى على حذفهم أكثر من 90 يوم
+  -- users deleted more than 90 days ago
   FOR v_user IN
     SELECT id, phone FROM users
     WHERE deleted_at IS NOT NULL
@@ -22,7 +22,7 @@ BEGIN
       AND is_active = FALSE
     FOR UPDATE SKIP LOCKED
   LOOP
-    -- إخفاء PII فقط (لا حذف الصف كاملاً — نحتفظ بـ id للـ FKs)
+    -- mask PII only (do not delete the whole row — we keep id for FKs)
     UPDATE users SET
       phone         = 'deleted_' || LEFT(id::TEXT, 8),
       full_name     = 'Deleted User',
@@ -31,10 +31,10 @@ BEGIN
       updated_at    = NOW()
     WHERE id = v_user.id;
 
-    -- إلغاء push tokens
+    -- revoke push tokens
     DELETE FROM push_tokens WHERE user_id = v_user.id;
 
-    -- حذف OTP sessions
+    -- delete OTP sessions
     DELETE FROM whatsapp_otp_sessions WHERE user_id = v_user.id;
 
     INSERT INTO activity_logs (user_id, action, target_type, target_id, details)

@@ -1,5 +1,5 @@
 -- ============================================================
--- احجز — Supabase Schema
+-- Ahjiz — Supabase Schema
 -- Run this in: Supabase Dashboard → SQL Editor
 -- ============================================================
 

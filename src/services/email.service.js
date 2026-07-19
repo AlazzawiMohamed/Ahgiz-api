@@ -1,27 +1,29 @@
 // ahgiz-api/src/services/email.service.js
-// قناة بريد معاملاتية — مقصورة على مصادقة الأدمن الثنائية (2FA) وتوثيق بريده.
-// ليست نظام إشعارات عام: لا تستدعِها من مسارات الزبائن أو الأعمال.
+// transactional email channel — limited to admin two-factor auth (2FA) and admin email verification.
+// not a general notification system: do not call it from customer or business routes.
 //
-// المزوّد: Resend عبر axios مباشرةً (لا تبعيّات جديدة — axios موجود أصلاً،
-// وبنفس أسلوب whatsapp.service.js).
+// provider: Resend via axios directly (no new dependencies — axios already exists,
+// and in the same style as whatsapp.service.js).
 const axios = require('axios');
 const logger = require('../utils/logger');
 
 const RESEND_URL = 'https://api.resend.com/emails';
 
-// نطاق Resend المشترك (لا نملك نطاقاً موثّقاً بعد — قرار المالك 2026-07-12).
-// ⚠️ قيد معروف: onboarding@resend.dev لا يسلّم إلا إلى بريد صاحب حساب Resend نفسه.
+// shared Resend domain (we do not own a verified domain yet — owner decision 2026-07-12).
+// ⚠️ known limitation: onboarding@resend.dev only delivers to the Resend account owner own email.
+// TODO(i18n): replace with i18n key
 const FROM = process.env.RESEND_FROM || 'احجز <onboarding@resend.dev>';
 
-// النسخ من صفحة ويب يلصق أحياناً محارف Unicode خفيّة (U+2028 مثلاً) في نهاية المفتاح،
-// فلا تظهر في أي محرّر لكنها تُرسَل مع الترويسة فيرفضها المزوّد بـ401. trim() يزيلها.
+// copying from a web page sometimes pastes hidden Unicode characters (e.g. U+2028) at the end of the key,
+// invisible in any editor but sent with the header, so the provider rejects it with 401. trim() removes them.
 const resendKey = () => String(process.env.RESEND_API_KEY || '').trim();
 
 const emailConfigured = () => Boolean(resendKey());
 
-// خطأ مُعقَّم: لا يحمل الرمز ولا المفتاح ولا كائن axios الأصلي
-// (err.config يحوي Authorization: Bearer <RESEND_API_KEY> ونصّ الرسالة ومعه الرمز).
+// sanitized error: carries neither the code nor the key nor the original axios object
+// (err.config holds Authorization: Bearer <RESEND_API_KEY> and the message text with the code).
 const emailError = () =>
+  // TODO(i18n): replace with i18n key
   Object.assign(new Error('تعذّر إرسال البريد حالياً'), { statusCode: 503 });
 
 const maskEmail = (addr) => {
@@ -47,7 +49,7 @@ const post = async (payload, to) => {
     });
     return { success: true, messageId: data?.id ?? null };
   } catch (err) {
-    // حقول قياسية فقط — لا نسجّل الاستجابة الخام ولا كائن الخطأ.
+    // standard fields only — we do not log the raw response or the error object.
     logger.error('Email transport failure', {
       to: maskEmail(to),
       httpStatus: err.response?.status ?? null,
@@ -58,16 +60,18 @@ const post = async (payload, to) => {
   }
 };
 
-// رمز 2FA — نفس الرمز ونفس الجلسة المُجزّأة؛ هذه قناة تسليم ثانية لا آلية مصادقة ثانية.
-// لا يُسجَّل الرمز في أي سجلّ، ولا يُعاد في أي استجابة.
+// 2FA code — same code and same hashed session; this is a second delivery channel, not a second auth factor.
+// the code is never written to any log, nor returned in any response.
 const sendAdminOtpEmail = async (to, otp) => {
   const minutes = process.env.OTP_EXPIRY_MINUTES || 5;
   return post(
     {
       from: FROM,
       to: [to],
+      // TODO(i18n): replace with i18n key
       subject: 'رمز الدخول للوحة تحكّم احجز',
       text:
+        // TODO(i18n): replace with i18n key
         `رمز التحقق الخاص بك: ${otp}\n\n` +
         `صالح لمدة ${minutes} دقائق. لا تشاركه مع أحد.\n\n` +
         `أُرسل هذا لأن تسليم واتساب تعذّر. إن لم تكن أنت من طلبه، تجاهل الرسالة وغيّر كلمة مرورك فوراً.`,
@@ -76,14 +80,16 @@ const sendAdminOtpEmail = async (to, otp) => {
   );
 };
 
-// رابط توثيق بريد الأدمن — يُستخدم مرّة واحدة عند التهيئة.
+// admin email verification link — used once during setup.
 const sendAdminVerificationEmail = async (to, link) =>
   post(
     {
       from: FROM,
       to: [to],
+      // TODO(i18n): replace with i18n key
       subject: 'توثيق بريد الأدمن — احجز',
       text:
+        // TODO(i18n): replace with i18n key
         `لتوثيق هذا البريد كقناة احتياطية لرمز الدخول، افتح الرابط:\n\n${link}\n\n` +
         `الرابط صالح لمدة ساعة واحدة ويُستخدم مرّة واحدة.\n` +
         `إن لم تطلب هذا، تجاهل الرسالة — لن يُفعَّل شيء.`,

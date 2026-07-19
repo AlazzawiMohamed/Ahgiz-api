@@ -1,16 +1,16 @@
 // ahgiz-api/src/queues/whatsapp.queue.js
-// طابور رسائل واتساب (Bull). يُهيّأ في worker فقط — لا يُستدعى process من app.js.
+// WhatsApp message queue (Bull). Initialized in the worker only — process is not called from app.js.
 const Bull = require('bull');
 const { sendWhatsAppWithRetry } = require('../services/whatsapp.service');
 const logger = require('../utils/logger');
 
 const REDIS_URL = process.env.REDIS_URL;
 
-// بدون REDIS_URL (تطوير محلي) لا ننشئ الطابور — نرسل مباشرةً.
+// without REDIS_URL (local dev) we do not create the queue — we send directly.
 const whatsappQueue = REDIS_URL ? new Bull('whatsapp', REDIS_URL) : null;
 
-// أرسل رسالة من أي مكان في الكود.
-// في الإنتاج: تذهب للطابور. غير ذلك: إرسال مباشر بإعادة المحاولة.
+// send a message from anywhere in the code.
+// in production: goes to the queue. Otherwise: direct send with retry.
 async function queueWhatsApp(phone, message, userId = null) {
   if (process.env.NODE_ENV === 'production' && whatsappQueue) {
     await whatsappQueue.add(
@@ -22,7 +22,7 @@ async function queueWhatsApp(phone, message, userId = null) {
   }
 }
 
-// المعالج + المستمعون — يعملون في worker فقط (عند وجود الطابور).
+// the processor + listeners — run in the worker only (when the queue exists).
 if (whatsappQueue) {
   whatsappQueue.process(async (job) => {
     const { phone, message, userId } = job.data;

@@ -12,6 +12,7 @@ const shapeTx = (tx) => ({
   reference: String(tx.id).slice(0, 8),
   hawala_reference: tx.hawala_reference,
   expires_at: tx.metadata?.expires_at || null,
+  // TODO(i18n): replace with i18n key
   instructions: `أرسل ${tx.amount} دينار إلى ${tx.receiver_phone}`,
 });
 
@@ -21,6 +22,7 @@ const shapeTx = (tx) => ({
 exports.asiahawalaInitiate = async (req, res, next) => {
   try {
     const { booking_id } = req.body;
+    // TODO(i18n): replace with i18n key
     if (!booking_id) return error(res, 'booking_id مطلوب', 400);
 
     // Server-side amount = booking price (never trust the client)
@@ -30,8 +32,10 @@ exports.asiahawalaInitiate = async (req, res, next) => {
       .eq('id', booking_id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
     if (booking.customer_id !== req.user.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'ليس لديك صلاحية لهذا الحجز', 403);
     }
 
@@ -44,6 +48,7 @@ exports.asiahawalaInitiate = async (req, res, next) => {
     if (rpcErr) throw rpcErr;
 
     if (result?.success) {
+      // TODO(i18n): replace with i18n key
       return success(res, result, 'تم إنشاء طلب الحوالة');
     }
 
@@ -57,12 +62,14 @@ exports.asiahawalaInitiate = async (req, res, next) => {
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
+      // TODO(i18n): replace with i18n key
       if (tx) return success(res, shapeTx(tx), 'طلب الحوالة موجود مسبقاً');
     }
 
     const codeMap = {
       NOT_FOUND: 404, UNAUTHORIZED: 403, INVALID_STATUS: 400, PAYMENT_DISABLED: 503,
     };
+    // TODO(i18n): replace with i18n key
     return error(res, result?.message || 'تعذّر إنشاء طلب الحوالة', codeMap[result?.code] || 400);
   } catch (err) {
     next(err);
@@ -75,6 +82,7 @@ exports.asiahawalaSubmit = async (req, res, next) => {
   try {
     const { booking_id, hawala_reference } = req.body;
     if (!booking_id || !hawala_reference) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'booking_id و hawala_reference مطلوبان', 400);
     }
 
@@ -87,7 +95,9 @@ exports.asiahawalaSubmit = async (req, res, next) => {
       .limit(1)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!tx) return error(res, 'لا يوجد طلب حوالة معلق لهذا الحجز', 404);
+    // TODO(i18n): replace with i18n key
     if (tx.user_id !== req.user.id) return error(res, 'ليس لديك صلاحية', 403);
 
     const { data: updated, error: upErr } = await supabaseAdmin
@@ -105,6 +115,7 @@ exports.asiahawalaSubmit = async (req, res, next) => {
       transaction_id:   updated.id,
       status:           updated.status,
       hawala_reference: updated.hawala_reference,
+    // TODO(i18n): replace with i18n key
     }, 'تم استلام رقم الحوالة — بانتظار تأكيد الإدارة');
   } catch (err) {
     next(err);
@@ -120,8 +131,10 @@ exports.asiahawalaStatus = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!tx) return error(res, 'المعاملة غير موجودة', 404);
     if (req.user.role === 'customer' && tx.user_id !== req.user.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'ليس لديك صلاحية', 403);
     }
     return success(res, tx);

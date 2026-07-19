@@ -5,7 +5,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const adminSchema = require('../schemas/admin.schema');
 
-// كل نقاط نهاية الأدمن محمية: توكن صالح + role=admin
+// all admin endpoints are protected: valid token + role=admin
 router.use(authenticate);
 router.use(authorize('admin'));
 
@@ -54,7 +54,7 @@ router.put('/withdrawals/:id/reject',  validate(adminSchema.reasonRequired), adm
 router.get('/reports',                 adminController.getReports);
 router.put('/reports/:id/resolve',     validate(adminSchema.resolveReport), adminController.resolveReport);
 
-// ── CSV exports (A09) — قبل /reports ليست بتعارض ──
+// ── CSV exports (A09) — before /reports to avoid a conflict ──
 router.get('/reports/export/:kind',    adminController.exportReport);
 
 // ── Stats (A10) ──

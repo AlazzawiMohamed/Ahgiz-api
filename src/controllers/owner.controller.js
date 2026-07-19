@@ -123,8 +123,10 @@ const fetchBookingForOwner = async (bookingId, businessId) => {
 exports.confirmBooking = async (req, res, next) => {
   try {
     const booking = await fetchBookingForOwner(req.params.id, req.business.id);
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
     if (booking.status !== 'pending') {
+      // TODO(i18n): replace with i18n key
       return error(res, `لا يمكن تأكيد حجز بحالة: ${booking.status}`, 400);
     }
 
@@ -136,6 +138,7 @@ exports.confirmBooking = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تأكيد الحجز');
   } catch (err) {
     next(err);
@@ -146,8 +149,10 @@ exports.confirmBooking = async (req, res, next) => {
 exports.completeBooking = async (req, res, next) => {
   try {
     const booking = await fetchBookingForOwner(req.params.id, req.business.id);
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
     if (booking.status !== 'confirmed') {
+      // TODO(i18n): replace with i18n key
       return error(res, `لا يمكن إتمام حجز بحالة: ${booking.status}`, 400);
     }
 
@@ -174,6 +179,7 @@ exports.completeBooking = async (req, res, next) => {
       logger.warn('grant_loyalty_points failed (non-fatal):', pointsError.message);
     }
 
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إتمام الحجز بنجاح');
   } catch (err) {
     next(err);
@@ -184,8 +190,10 @@ exports.completeBooking = async (req, res, next) => {
 exports.noShowBooking = async (req, res, next) => {
   try {
     const booking = await fetchBookingForOwner(req.params.id, req.business.id);
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
     if (!['pending', 'confirmed'].includes(booking.status)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `لا يمكن تسجيل غياب لحجز بحالة: ${booking.status}`, 400);
     }
 
@@ -197,6 +205,7 @@ exports.noShowBooking = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تسجيل الغياب');
   } catch (err) {
     next(err);
@@ -229,12 +238,12 @@ const OWNER_EDITABLE = [
   'min_booking_gap', 'prep_time_minutes',
   'no_last_minute', 'last_minute_hours',
   'overtime_allowed', 'waitlist_enabled',
-  // Sprint 4 — تتطلب migration 2026-06-23_owner_gap_endpoints.sql
+  // Sprint 4 — requires migration 2026-06-23_owner_gap_endpoints.sql
   'calendar_booking_color', 'calendar_break_color',
   'rebooking_reminder_days', 'time_magnet',
 ];
 
-// تحقق من صيغة لون hex (#RGB أو #RRGGBB)
+// validate hex color format (#RGB or #RRGGBB)
 const isHexColor = (v) => typeof v === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
 
 exports.updateBusiness = async (req, res, next) => {
@@ -244,18 +253,21 @@ exports.updateBusiness = async (req, res, next) => {
     );
 
     if (!Object.keys(updates).length) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا توجد حقول صالحة للتحديث', 400);
     }
 
     // Validate booking_confirmation if provided
     if (updates.booking_confirmation &&
         !['auto', 'manual'].includes(updates.booking_confirmation)) {
+      // TODO(i18n): replace with i18n key
       return error(res, "booking_confirmation يجب أن يكون 'auto' أو 'manual'", 400);
     }
 
     // Validate calendar colors if provided
     for (const key of ['calendar_booking_color', 'calendar_break_color']) {
       if (updates[key] != null && !isHexColor(updates[key])) {
+        // TODO(i18n): replace with i18n key
         return error(res, `${key} يجب أن يكون لون hex صالح مثل #22C55E`, 400);
       }
     }
@@ -277,6 +289,7 @@ exports.updateBusiness = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث بيانات المحل');
   } catch (err) {
     next(err);
@@ -291,7 +304,7 @@ const NOTE_TAGS    = ['⏰', '⚡', '💰', '❌', '👻', '😊', '😤', '⚠�
 const WARNING_TAGS = ['❌', '👻', '😤', '⚠️'];
 
 // ─── GET /owner/bookings/calendar?date=&staff_id= ────────────────────────────
-// حجوزات اليوم (عدا الملغاة) + فترات الاستراحة من ساعات العمل.
+// today's bookings (excluding cancelled) + break periods from working hours.
 exports.getCalendar = async (req, res, next) => {
   try {
     const date = req.query.date || todayStr();
@@ -309,8 +322,8 @@ exports.getCalendar = async (req, res, next) => {
     const { data: bookings, error: bErr } = await q;
     if (bErr) throw bErr;
 
-    // ملاحظة: جدول working_hours في هذا الإصدار لا يخزّن فترات استراحة،
-    // لذا breaks فارغة حتى يُضاف جدول/أعمدة الاستراحات.
+    // note: the working_hours table in this version does not store break periods,
+    // so breaks is empty until a breaks table/columns are added.
     const breaks = [];
 
     return success(res, { date, bookings: bookings || [], breaks });
@@ -320,7 +333,7 @@ exports.getCalendar = async (req, res, next) => {
 };
 
 // ─── GET /owner/bookings/day-indicators?date=&staff_id= ──────────────────────
-// مؤشرات كل حجز: has_note / is_loyal / has_files / has_warning.
+// per-booking flags: has_note / is_loyal / has_files / has_warning.
 exports.getDayIndicators = async (req, res, next) => {
   try {
     const date = req.query.date || todayStr();
@@ -356,7 +369,7 @@ exports.getDayIndicators = async (req, res, next) => {
       booking_id:  b.id,
       has_note:    !!b.customer_note,
       is_loyal:    byCustomer[b.customer_id]?.is_loyal || false,
-      has_files:   false, // لا يوجد جدول ملفات في هذا الإصدار من قاعدة البيانات
+      has_files:   false, // no files table in this version of the database
       has_warning: byCustomer[b.customer_id]?.has_warning || false,
     }));
 
@@ -388,7 +401,9 @@ exports.listClientNotes = async (req, res, next) => {
 exports.createClientNote = async (req, res, next) => {
   try {
     const { note, tag = null, is_loyal = false } = req.body || {};
+    // TODO(i18n): replace with i18n key
     if (!note || !String(note).trim()) return error(res, 'الملاحظة مطلوبة', 400);
+    // TODO(i18n): replace with i18n key
     if (tag != null && !NOTE_TAGS.includes(tag)) return error(res, 'وسم غير صالح', 400);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -403,6 +418,7 @@ exports.createClientNote = async (req, res, next) => {
       .select(NOTE_SELECT)
       .single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تمت إضافة الملاحظة', 201);
   } catch (err) {
     next(err);
@@ -414,6 +430,7 @@ exports.updateClientNote = async (req, res, next) => {
   try {
     const { note, tag, is_loyal } = req.body || {};
     if (tag != null && tag !== '' && !NOTE_TAGS.includes(tag)) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'وسم غير صالح', 400);
     }
 
@@ -431,7 +448,9 @@ exports.updateClientNote = async (req, res, next) => {
       .select(NOTE_SELECT)
       .maybeSingle();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'الملاحظة غير موجودة', 404);
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث الملاحظة');
   } catch (err) {
     next(err);
@@ -450,7 +469,9 @@ exports.deleteClientNote = async (req, res, next) => {
       .select('id')
       .maybeSingle();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     if (!data) return error(res, 'الملاحظة غير موجودة', 404);
+    // TODO(i18n): replace with i18n key
     return success(res, { id: data.id }, 'تم حذف الملاحظة');
   } catch (err) {
     next(err);
@@ -458,10 +479,11 @@ exports.deleteClientNote = async (req, res, next) => {
 };
 
 // ─── PUT /owner/bookings/:id/cancel ──────────────────────────────────────────
-// إلغاء صاحب العمل بسبب — عبر cancel_booking_with_fee (لا رسوم على المالك).
+// business-owner cancellation with reason — via cancel_booking_with_fee (no fee on the owner).
 exports.cancelBooking = async (req, res, next) => {
   try {
     const booking = await fetchBookingForOwner(req.params.id, req.business.id);
+    // TODO(i18n): replace with i18n key
     if (!booking) return error(res, 'الحجز غير موجود', 404);
 
     const reason = (req.body?.reason || '').toString().trim() || null;
@@ -474,8 +496,10 @@ exports.cancelBooking = async (req, res, next) => {
     if (dbErr) throw dbErr;
 
     if (data && data.success === false) {
+      // TODO(i18n): replace with i18n key
       return error(res, data.message || 'تعذّر إلغاء الحجز', 400);
     }
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إلغاء الحجز');
   } catch (err) {
     next(err);
@@ -483,11 +507,12 @@ exports.cancelBooking = async (req, res, next) => {
 };
 
 // ─── PUT /owner/bookings/:id/reschedule ──────────────────────────────────────
-// body: { booking_date, start_time } — يُعاد حساب end_time من المدة.
+// body: { booking_date, start_time } — end_time is recomputed from the duration.
 exports.rescheduleBooking = async (req, res, next) => {
   try {
     const { booking_date, start_time } = req.body || {};
     if (!booking_date || !start_time) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'booking_date و start_time مطلوبان', 400);
     }
 
@@ -497,9 +522,11 @@ exports.rescheduleBooking = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
     if (!booking || booking.business_id !== req.business.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'الحجز غير موجود', 404);
     }
     if (!['pending', 'confirmed'].includes(booking.status)) {
+      // TODO(i18n): replace with i18n key
       return error(res, `لا يمكن إعادة جدولة حجز بحالة: ${booking.status}`, 400);
     }
 
@@ -515,6 +542,7 @@ exports.rescheduleBooking = async (req, res, next) => {
       .select(OWNER_BOOKING_SELECT)
       .single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تمت إعادة جدولة الحجز');
   } catch (err) {
     next(err);
@@ -522,10 +550,11 @@ exports.rescheduleBooking = async (req, res, next) => {
 };
 
 // ─── PUT /owner/reviews/:id/reply ────────────────────────────────────────────
-// body: { reply } — تتطلب migration (owner_reply, owner_reply_at).
+// body: { reply } — requires migration (owner_reply, owner_reply_at).
 exports.replyReview = async (req, res, next) => {
   try {
     const reply = (req.body?.reply || '').toString().trim();
+    // TODO(i18n): replace with i18n key
     if (!reply) return error(res, 'نص الرد مطلوب', 400);
 
     const { data: review } = await supabaseAdmin
@@ -534,6 +563,7 @@ exports.replyReview = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
     if (!review || review.business_id !== req.business.id) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'التقييم غير موجود', 404);
     }
 
@@ -544,6 +574,7 @@ exports.replyReview = async (req, res, next) => {
       .select('id, owner_reply, owner_reply_at')
       .single();
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم نشر الرد');
   } catch (err) {
     next(err);

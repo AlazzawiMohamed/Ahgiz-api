@@ -1,7 +1,7 @@
 const { supabaseAdmin } = require('../utils/supabase');
 const { success, error } = require('../utils/response');
 
-// هل يملك المستخدم هذا المحل؟ (الأدمن يتجاوز)
+// does the user own this business? (admin bypasses)
 const ownsBusiness = async (userId, businessId) => {
   const { data } = await supabaseAdmin
     .from('businesses')
@@ -12,7 +12,7 @@ const ownsBusiness = async (userId, businessId) => {
   return !!data;
 };
 
-// business_id المالك للخدمة (للتحقق قبل التعديل/الحذف)
+// the business_id that owns the service (for the check before update/delete)
 const serviceBusinessId = async (serviceId) => {
   const { data } = await supabaseAdmin
     .from('services')
@@ -45,6 +45,7 @@ exports.getById = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (dbErr || !data) return error(res, 'الخدمة غير موجودة', 404);
     return success(res, data);
   } catch (err) {
@@ -62,6 +63,7 @@ exports.getAddons = async (req, res, next) => {
       .eq('id', req.params.id)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (!svc) return error(res, 'الخدمة غير موجودة', 404);
 
     const { data, error: dbErr } = await supabaseAdmin
@@ -84,11 +86,13 @@ exports.create = async (req, res, next) => {
   try {
     const { business_id, name, description, price, duration, category } = req.body;
     if (!business_id || !name || !price || !duration) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'بيانات الخدمة غير مكتملة', 400);
     }
 
-    // تحقق الملكية — لا يُسمح بإنشاء خدمة لمحل لا تملكه
+    // ownership check — you cannot create a service for a business you do not own
     if (req.user.role !== 'admin' && !(await ownsBusiness(req.user.id, business_id))) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا تملك هذا المحل', 403);
     }
 
@@ -99,6 +103,7 @@ exports.create = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم إضافة الخدمة بنجاح', 201);
   } catch (err) {
     next(err);
@@ -108,8 +113,10 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   try {
     const bizId = await serviceBusinessId(req.params.id);
+    // TODO(i18n): replace with i18n key
     if (!bizId) return error(res, 'الخدمة غير موجودة', 404);
     if (req.user.role !== 'admin' && !(await ownsBusiness(req.user.id, bizId))) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا تملك هذه الخدمة', 403);
     }
 
@@ -126,6 +133,7 @@ exports.update = async (req, res, next) => {
       .single();
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, data, 'تم تحديث الخدمة');
   } catch (err) {
     next(err);
@@ -135,8 +143,10 @@ exports.update = async (req, res, next) => {
 exports.remove = async (req, res, next) => {
   try {
     const bizId = await serviceBusinessId(req.params.id);
+    // TODO(i18n): replace with i18n key
     if (!bizId) return error(res, 'الخدمة غير موجودة', 404);
     if (req.user.role !== 'admin' && !(await ownsBusiness(req.user.id, bizId))) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا تملك هذه الخدمة', 403);
     }
 
@@ -146,6 +156,7 @@ exports.remove = async (req, res, next) => {
       .eq('id', req.params.id);
 
     if (dbErr) throw dbErr;
+    // TODO(i18n): replace with i18n key
     return success(res, null, 'تم حذف الخدمة');
   } catch (err) {
     next(err);

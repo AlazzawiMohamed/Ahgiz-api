@@ -193,6 +193,7 @@ exports.getById = async (req, res, next) => {
       .eq('is_frozen', false)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (dbErr || !data) return error(res, 'المحل غير موجود أو غير نشط', 404);
 
     return success(res, data);
@@ -244,11 +245,15 @@ exports.getAvailability = async (req, res, next) => {
   try {
     const { date, service_id, staff_id, slot_interval = '15' } = req.query;
 
+    // TODO(i18n): replace with i18n key
     if (!date)       return error(res, 'date مطلوب (YYYY-MM-DD)', 400);
+    // TODO(i18n): replace with i18n key
     if (!service_id) return error(res, 'service_id مطلوب', 400);
 
+    // TODO(i18n): replace with i18n key
     if (isNaN(Date.parse(date))) return error(res, 'تنسيق التاريخ غير صحيح', 400);
     if (new Date(date) < new Date(new Date().toDateString())) {
+      // TODO(i18n): replace with i18n key
       return error(res, 'لا يمكن عرض مواعيد في الماضي', 400);
     }
 
@@ -261,6 +266,7 @@ exports.getAvailability = async (req, res, next) => {
       .eq('is_active', true)
       .single();
 
+    // TODO(i18n): replace with i18n key
     if (svcErr || !service) return error(res, 'الخدمة غير موجودة أو لا تنتمي لهذا المحل', 404);
 
     // Resolve staff_id — use provided or pick first active staff member
