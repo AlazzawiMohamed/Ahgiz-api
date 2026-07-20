@@ -59,3 +59,10 @@ Full context and verification queries: `../ahgiz-backups/security_revoke_2026070
 
 ## Deploy
 - Deploy via `railway up --service divine-creativity` (not GitHub auto-deploy).
+
+## INDEX.md — keep it truthful
+
+If a change adds, moves, renames, or deletes a file, or changes a documented
+convention, update `INDEX.md` in the SAME commit and refresh its "Last verified"
+date. Run `scripts/verify-index.sh` before committing — it exits non-zero on any
+stale path.
