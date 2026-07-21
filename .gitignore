@@ -7,3 +7,6 @@ logs/
 dist/
 coverage/
 .DS_Store
+
+# Claude Code local settings (per-machine; never deploy or track)
+.claude/settings.local.json
