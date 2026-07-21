@@ -15,10 +15,15 @@ const BOOKING_SELECT = `
   id, customer_id, booking_date, start_time, end_time, duration, price,
   status, payment_method, payment_status, booking_type,
   customer_note, selected_addons, created_at,
+  free_cancellation_until, cancellation_requested,
   services ( id, name, duration, price ),
-  businesses ( id, name, address, phone, logo_url ),
+  businesses ( id, name, address, phone, logo_url, cancellation_hours ),
   staff ( id, name, photo_url )
 `;
+// NOTE: free_cancellation_until, cancellation_requested and businesses.cancellation_hours
+// mirror MY_BOOKING_SELECT (below). They power the mobile smart-cancel button (direct
+// "Cancel" vs. "Request cancellation") on the booking detail screen. Keep them in sync
+// with MY_BOOKING_SELECT so the detail and list screens decide identically.
 
 // ─── POST /bookings ───────────────────────────────────────────────────────────
 exports.create = async (req, res, next) => {
