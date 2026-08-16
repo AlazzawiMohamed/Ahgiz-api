@@ -217,13 +217,13 @@ exports.updateAvatar = async (req, res, next) => {
 
     const fileName = `avatars/${req.user.id}-${Date.now()}`;
     const { error: uploadErr } = await supabaseAdmin.storage
-      .from('uploads')
+      .from('ahgiz-public')
       .upload(fileName, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
 
     if (uploadErr) throw uploadErr;
 
     const { data: { publicUrl } } = supabaseAdmin.storage
-      .from('uploads')
+      .from('ahgiz-public')
       .getPublicUrl(fileName);
 
     const { data, error: dbErr } = await supabaseAdmin
