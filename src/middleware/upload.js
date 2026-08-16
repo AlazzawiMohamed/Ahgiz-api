@@ -21,7 +21,7 @@ const upload = multer({
 });
 
 // ── medical/legal file uploads ──────────────────────────────────────────────
-// only PDF/JPG/PNG/WEBP allowed, SVG explicitly blocked, max 10MB.
+// only PDF/JPG/PNG/WEBP allowed, SVG explicitly blocked, max 25MB.
 const MEDICAL_EXT  = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
 const MEDICAL_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
@@ -43,7 +43,7 @@ const medicalFileFilter = (req, file, cb) => {
 const uploadMedical = multer({
   storage,
   fileFilter: medicalFileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 });
 
 module.exports = upload;

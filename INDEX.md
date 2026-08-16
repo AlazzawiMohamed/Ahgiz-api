@@ -1,6 +1,6 @@
 # ahgiz-api — Knowledge Index
 
-**Last verified:** 2026-07-20
+**Last verified:** 2026-08-15
 
 > A truthful mirror of the CURRENT repo — where everything is, and the traps that
 > reading code won't reveal. Update this file (and the date above) in the same commit
@@ -102,7 +102,7 @@ Mount order is in `src/routes/index.js`; `/admin/auth` is registered before `/ad
 | Loyalty | `/loyalty` | `src/routes/loyalty.routes.js` | `src/controllers/loyalty.controller.js` | none |
 | Referral | `/referral` | `src/routes/referral.routes.js` | `src/controllers/referral.controller.js` | none |
 | Waitlist | `/waitlist` | `src/routes/waitlist.routes.js` | `src/controllers/waitlist.controller.js` | `src/schemas/waitlist.schema.js` |
-| Medical (shared) | `/medical` | `src/routes/medical.routes.js` | `src/controllers/medical.controller.js` | none *(owner writes → `src/schemas/owner.schema.js`)* |
+| Medical (shared) | `/medical` | `src/routes/medical.routes.js` | `src/controllers/medical.controller.js` | `src/schemas/medical.schema.js` *(customer access grant; owner writes → `src/schemas/owner.schema.js`)* |
 | Search | `/search` | `src/routes/search.routes.js` | `src/controllers/search.controller.js` | none |
 | Owner (mgmt) | `/owner` | `src/routes/owner.routes.js` | `src/controllers/owner.controller.js` + `src/controllers/medical.controller.js` | `src/schemas/owner.schema.js` |
 | Admin auth | `/admin/auth` | `src/routes/adminAuth.routes.js` | `src/controllers/adminAuth.controller.js` | none |
