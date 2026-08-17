@@ -11,4 +11,10 @@ const grantAccess = z.object({
   duration_unit:          z.enum(['hours', 'days']),
 });
 
-module.exports = { grantAccess };
+// DELETE /medical/access/:id/dismiss — route param only (validated via
+// validateParams, not validate, since the id arrives on req.params not req.body).
+// Uses the shared shape-only `uuid` helper deliberately: z.string().uuid() enforces
+// the RFC version/variant nibbles and rejects this system's seed ids.
+const dismissGrantParams = z.object({ id: uuid });
+
+module.exports = { grantAccess, dismissGrantParams };

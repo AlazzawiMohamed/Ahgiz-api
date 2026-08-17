@@ -1,6 +1,6 @@
 # ahgiz-api — Knowledge Index
 
-**Last verified:** 2026-08-15
+**Last verified:** 2026-08-17
 
 > A truthful mirror of the CURRENT repo — where everything is, and the traps that
 > reading code won't reveal. Update this file (and the date above) in the same commit
@@ -127,6 +127,7 @@ Mount order is in `src/routes/index.js`; `/admin/auth` is registered before `/ad
 |---|---|
 | `src/middleware/auth.js` | `authenticate` / `authorize` / `optionalAuth` |
 | `src/middleware/validate.js` | Zod body-validation factory |
+| `src/middleware/validateParams.js` | Zod route-param validation factory |
 | `src/middleware/rateLimiter.js` | All rate limiters (global, OTP, admin login/2FA, break-glass) |
 | `src/middleware/requireBusiness.js` | Require caller owns a business |
 | `src/middleware/upload.js` | Multer upload (incl. medical files) |

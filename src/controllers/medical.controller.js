@@ -861,6 +861,71 @@ exports.revokeAccess = async (req, res, next) => {
   }
 };
 
+// ─── DELETE /medical/access/:id/dismiss ──────────────────────────────────────
+// The customer permanently removes an INACTIVE grant from their access list.
+// This is NOT revoke: revoke soft-revokes and the row remains as history, dismiss
+// hard-deletes the grant row itself.
+//
+// The audit trail is deliberately preserved — medical_access_log.grant_id is
+// ON DELETE SET NULL (migration 2026-08-16_medical_access_log_decouple.sql) and
+// every log row carries its own owner_id / granted_to_business_id /
+// business_name_at_access, so what this business already opened stays on record
+// and stays readable by its owner.
+exports.dismissGrant = async (req, res, next) => {
+  try {
+    const { data: grant, error: gErr } = await supabaseAdmin
+      .from('record_access_grants')
+      .select('id, revoked_at, expires_at')
+      .eq('id', req.params.id)
+      .eq('owner_id', req.user.id)   // only the owner may dismiss their own grant
+      .maybeSingle();
+    if (gErr) throw gErr;
+    if (!grant) {
+      // TODO(i18n): replace with i18n key
+      return error(res, 'الإذن غير موجود', 404, { code: 'grant_not_found' });
+    }
+
+    // An active grant must be revoked first — dismissing one directly would end a
+    // live access window as a side effect of a "remove from list" action.
+    if (grantStatus(grant) === 'active') {
+      // TODO(i18n): replace with i18n key
+      return error(res, 'اسحب الإذن أولاً قبل حذفه من القائمة', 409, { code: 'revoke_before_dismiss' });
+    }
+
+    const { error: dErr } = await supabaseAdmin
+      .from('record_access_grants')
+      .delete()
+      .eq('id', grant.id)
+      .eq('owner_id', req.user.id);
+    if (dErr) throw dErr;
+
+    // TODO(i18n): replace with i18n key
+    return success(res, { id: grant.id }, 'تم حذف الإذن من القائمة');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Shared by BOTH access-log endpoints (one grant, and the owner's whole history) so
+// their row shape cannot drift apart — the mobile client renders either with one
+// component. owner_id is selected even though it is never returned: both handlers
+// re-assert it in Node as defense-in-depth, since the service role bypasses RLS.
+const ACCESS_LOG_SELECT =
+  'id, action, accessed_at, file_id, owner_id, business_name_at_access, ' +
+  'file:user_files(file_name), accessor:users(full_name)';
+
+function mapAccessLogRow(r) {
+  return {
+    id:            r.id,
+    action:        r.action,
+    accessed_at:   r.accessed_at,
+    file_name:     r.file?.file_name ?? null,
+    accessor_name: r.accessor?.full_name ?? null,
+    // Frozen at access time — survives the business renaming itself or being deleted.
+    business_name: r.business_name_at_access ?? null,
+  };
+}
+
 // ─── GET /medical/access/log/:grantId ────────────────────────────────────────
 // Full audit trail for one grant (who opened which file, when, view/download).
 // Owner-only.
@@ -881,19 +946,48 @@ exports.accessLog = async (req, res, next) => {
 
     const { data, error: dbErr } = await supabaseAdmin
       .from('medical_access_log')
-      .select('id, action, accessed_at, file_id, file:user_files(file_name), accessor:users(full_name)')
+      .select(ACCESS_LOG_SELECT)
       .eq('grant_id', grant.id)
+      // Defense-in-depth: the service role bypasses RLS, so authorise on the row's
+      // own owner_id rather than trusting the grant join above alone.
+      .eq('owner_id', req.user.id)
       .order('accessed_at', { ascending: false });
     if (dbErr) throw dbErr;
 
-    const log = (data || []).map((r) => ({
-      id:            r.id,
-      action:        r.action,
-      accessed_at:   r.accessed_at,
-      file_name:     r.file?.file_name ?? null,
-      accessor_name: r.accessor?.full_name ?? null,
-    }));
+    // Redundant by construction with the .eq above — kept so that removing that
+    // filter in a future edit cannot silently widen what this endpoint returns.
+    const log = (data || []).filter((r) => r.owner_id === req.user.id).map(mapAccessLogRow);
     return success(res, { log });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── GET /medical/access/log?limit=&offset= ──────────────────────────────────
+// The customer's FULL access history, across every grant they have ever issued —
+// including grants since dismissed. This is what makes the decoupling in migration
+// 2026-08-16_medical_access_log_decouple.sql actually reachable: accessLog above is
+// keyed on a grant row that no longer exists after a dismiss, whereas these rows are
+// authorised on their own owner_id and outlive it.
+// Served by idx_medical_access_log_owner (owner_id, accessed_at DESC).
+exports.accessLogAll = async (req, res, next) => {
+  try {
+    // Same clamp idiom as the other "my own history" lists (see loyalty.getHistory,
+    // booking history): default 20, hard max 50, offset floored at 0.
+    const limit  = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+    const { data, error: dbErr } = await supabaseAdmin
+      .from('medical_access_log')
+      .select(ACCESS_LOG_SELECT)
+      .eq('owner_id', req.user.id)   // the only authorisation this endpoint needs
+      .order('accessed_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (dbErr) throw dbErr;
+
+    // Same belt-and-suspenders re-assertion as accessLog.
+    const log = (data || []).filter((r) => r.owner_id === req.user.id).map(mapAccessLogRow);
+    return success(res, { log, limit, offset });
   } catch (err) {
     next(err);
   }
@@ -940,6 +1034,24 @@ exports.listPatientFiles = async (req, res, next) => {
       // TODO(i18n): replace with i18n key
       return error(res, 'لا يوجد إذن وصول فعّال', 403, { code: 'no_active_grant' });
     }
+
+    // Enumerating a patient's file list is itself an access event, so it is audited
+    // like a file open: written BEFORE any metadata is returned, and fail-closed
+    // (throw) exactly as in streamFile — no listing without an audit row.
+    // file_id stays NULL: general grant access, not a specific file.
+    const { error: logErr } = await supabaseAdmin
+      .from('medical_access_log')
+      .insert({
+        grant_id:                grant.id,
+        accessed_by:             req.user.id,
+        file_id:                 null,
+        action:                  'list_files',
+        owner_id:                req.params.patientId,
+        granted_to_business_id:  req.business.id,
+        business_name_at_access: req.business.name,
+      });
+    if (logErr) throw logErr;
+
     const { data, error: dbErr } = await supabaseAdmin
       .from('user_files')
       .select('id, file_type, file_name, file_size_kb, mime_type, created_at')
@@ -990,7 +1102,18 @@ exports.streamFile = async (req, res, next) => {
     // if the byte transfer is later interrupted.
     const { error: logErr } = await supabaseAdmin
       .from('medical_access_log')
-      .insert({ grant_id: grant.id, accessed_by: req.user.id, file_id: file.id, action });
+      .insert({
+        grant_id:                grant.id,
+        accessed_by:             req.user.id,
+        file_id:                 file.id,
+        action,
+        // Denormalised so the row survives the grant being dismissed, and so the
+        // business name is frozen as the customer saw it at access time.
+        // req.business is already loaded by requireBusiness — no extra query.
+        owner_id:                file.owner_id,
+        granted_to_business_id:  req.business.id,
+        business_name_at_access: req.business.name,
+      });
     if (logErr) throw logErr;
 
     // Pull the bytes with the service role (never a public/signed URL) and pipe them.
